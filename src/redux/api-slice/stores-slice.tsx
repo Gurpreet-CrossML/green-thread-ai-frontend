@@ -19,6 +19,8 @@ export type Store = {
   id: string;
   name: string;
   code: string;
+  /** The store's default language code, e.g. "fi". */
+  default_language?: string;
 };
 
 export const SELECTED_STORE_KEY = "selectedStore";

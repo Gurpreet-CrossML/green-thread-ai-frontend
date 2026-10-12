@@ -29,6 +29,29 @@ export const metadata: Metadata = {
     "Store Signals AI Analytics is a master dashboard for all your store's analytics needs. It provides insights into sales, customer behavior, and inventory management, helping you make informed decisions to grow your business.",
 };
 
+/**
+ * Lets the browser's page translator (e.g. Chrome's Google Translate) run on
+ * the dashboard without crashing it. The translator replaces text nodes React
+ * still manages, and React then fails ("removeChild": not a child) when it
+ * updates them, which blanks the page. This makes those two DOM calls skip a
+ * node that is no longer where React left it, instead of throwing.
+ */
+const TRANSLATE_GUARD = `
+(function () {
+  if (typeof Node !== "function" || !Node.prototype) return;
+  var removeChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function (child) {
+    if (child.parentNode !== this) return child;
+    return removeChild.apply(this, arguments);
+  };
+  var insertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function (newNode, referenceNode) {
+    if (referenceNode && referenceNode.parentNode !== this) return newNode;
+    return insertBefore.apply(this, arguments);
+  };
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -47,6 +70,9 @@ export default function RootLayout({
       )}
       data-scroll-behavior="smooth"
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: TRANSLATE_GUARD }} />
+      </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col">
         <Providers>
           <StoreProvider>

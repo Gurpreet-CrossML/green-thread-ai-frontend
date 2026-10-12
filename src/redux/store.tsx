@@ -4,18 +4,13 @@ import OnboardingSlice from "@/redux/api-slice/onboarding-slice";
 import StoresSlice from "@/redux/api-slice/stores-slice";
 import DashboardSlice from "@/redux/api-slice/dashboard-slice";
 import ThreadSlice from "@/redux/api-slice/thread-slice";
-import KnowledgeRagSlice from "@/redux/api-slice/knowledge-rag-slice";
 import CustomizationSlice from "@/redux/api-slice/customization-slice";
 import TenancySlice from "@/redux/api-slice/tenancy-slice";
-import BrandVoiceSlice from "@/redux/api-slice/brand-voice-slice";
-import IntegrationSlice from "@/redux/api-slice/integrations-slice";
 import SupportTicketsSlice from "@/redux/api-slice/support-ticket-slice";
-import SocialAISlice from "@/redux/api-slice/social-ai-slice";
 import AIUsageSlice from "@/redux/api-slice/ai-usage-slice";
 import StoreSettingsSlice from "@/redux/api-slice/store-settings-slice";
 import CustomerSlice from "@/redux/api-slice/customer-slice";
 import OrderSlice from "@/redux/api-slice/order-slice";
-import CampaignSlice from "@/redux/api-slice/campaign-slice";
 
 const store = configureStore({
   reducer: {
@@ -27,15 +22,10 @@ const store = configureStore({
     GetOrderReducer: OrderSlice,
     GetDashboardReducer: DashboardSlice,
     GetThreadReducer: ThreadSlice,
-    GetKnowledgeRagReducer: KnowledgeRagSlice,
     GetCustomizationReducer: CustomizationSlice,
     GetTenancyReducer: TenancySlice,
-    GetBrandVoiceReducer: BrandVoiceSlice,
-    GetIntegrationReducer: IntegrationSlice,
     GetSupportTicketsReducer: SupportTicketsSlice,
-    GetSocialAIReducer: SocialAISlice,
     GetAIUsageReducer: AIUsageSlice,
-    GetCampaignReducer: CampaignSlice,
   },
 });
 

@@ -19,6 +19,7 @@ export async function list_stores() {
       id: store.id,
       name: store.name,
       code: store.code,
+      default_language: store.defaultLanguage,
     })
     .from(store);
   return (scope ? query.where(scope) : query).orderBy(asc(store.name));

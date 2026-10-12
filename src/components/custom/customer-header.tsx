@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import {
   IconDeviceLaptop,
-  IconExternalLink,
   IconInfoCircle,
   IconLocationPin,
   IconNetwork,
@@ -40,26 +38,8 @@ export function CrmLinkButton({
   /** Offered when there is no customer to open. */
   onLinkCustomer?: () => void;
 }) {
-  if (customerId) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="View in Catalog"
-            asChild
-          >
-            <Link href={`/crm/customers/${customerId}`}>
-              <IconExternalLink className="size-4" />
-            </Link>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>View in Catalog</TooltipContent>
-      </Tooltip>
-    );
-  }
-
+  // A linked customer needs no action here.
+  if (customerId) return null;
   if (!onLinkCustomer) return null;
 
   return (

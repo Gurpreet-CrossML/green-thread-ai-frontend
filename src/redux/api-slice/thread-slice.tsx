@@ -129,8 +129,27 @@ export type CartDetails = {
   sub_total: string;
 };
 
+/** A tyre the tyre-selection assistant recommended (its `TeamOutput`). */
+export type TyreRecommendation = {
+  tyre_id?: string | null;
+  name?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  size?: string | null;
+  load_index?: number | null;
+  speed_rating?: string | null;
+  season_title?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  in_stock?: number | null;
+  buy_link?: string | null;
+  image_url?: string | null;
+};
+
 export type ThreadJsonContent = {
   products?: ProductData[];
+  /** Tyres recommended by the tyre-selection assistant. */
+  recommendations?: TyreRecommendation[] | null;
   order_details?: OrderDetail;
   cart_details?: CartDetails;
   order_id?: string;

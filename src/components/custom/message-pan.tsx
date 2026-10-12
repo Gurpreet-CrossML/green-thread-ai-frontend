@@ -6,6 +6,7 @@ import {
   HandlerEvent,
   ProductData,
   ThreadMessage,
+  TyreRecommendation,
 } from "@/redux/api-slice/thread-slice";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ReactMarkdown from "react-markdown";
@@ -424,6 +425,80 @@ export default function MessagePan({
                                     {product.price && (
                                       <span className="text-xs font-semibold text-primary shrink-0">
                                         {product.price}
+                                      </span>
+                                    )}
+                                  </a>
+                                );
+                              },
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                    {message.role === "assistant" &&
+                      Array.isArray(message?.json_content?.recommendations) &&
+                      message.json_content.recommendations.length > 0 && (
+                        <div className="flex justify-start mt-2">
+                          <div className="flex flex-wrap gap-2 w-full">
+                            {message.json_content.recommendations.map(
+                              (tyre: TyreRecommendation, idx: number) => {
+                                const title =
+                                  [tyre.brand, tyre.model]
+                                    .filter(Boolean)
+                                    .join(" ") ||
+                                  tyre.name ||
+                                  "Tyre";
+                                const specs = [
+                                  tyre.size,
+                                  [tyre.load_index, tyre.speed_rating]
+                                    .filter(Boolean)
+                                    .join(""),
+                                  tyre.season_title,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ");
+                                return (
+                                  <a
+                                    key={tyre.tyre_id ?? idx}
+                                    href={tyre.buy_link ?? undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 p-2.5 border border-border bg-background hover:bg-muted/50 transition-colors no-underline w-[240px] shrink-0"
+                                  >
+                                    {tyre.image_url ? (
+                                      <Image
+                                        src={tyre.image_url}
+                                        alt={title}
+                                        width={48}
+                                        height={48}
+                                        // Tyre images come from the store's catalogue
+                                        // host; rendered directly, like product images.
+                                        unoptimized
+                                        className="h-12 w-12 object-contain shrink-0 bg-muted"
+                                      />
+                                    ) : (
+                                      <div className="h-12 w-12 rounded bg-muted shrink-0 flex items-center justify-center text-muted-foreground text-[10px]">
+                                        No img
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-medium text-foreground truncate leading-snug">
+                                        {title}
+                                      </p>
+                                      {specs && (
+                                        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                                          {specs}
+                                        </p>
+                                      )}
+                                      {tyre.in_stock != null && (
+                                        <p className="text-[10px] text-muted-foreground">
+                                          {tyre.in_stock} in stock
+                                        </p>
+                                      )}
+                                    </div>
+                                    {tyre.price != null && (
+                                      <span className="text-xs font-semibold text-primary shrink-0">
+                                        {tyre.price} {tyre.currency ?? ""}
                                       </span>
                                     )}
                                   </a>

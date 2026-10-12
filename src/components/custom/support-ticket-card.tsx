@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  IconArrowUpRight,
-  IconExternalLink,
   IconInfoCircle,
 } from "@tabler/icons-react";
 
@@ -139,8 +137,7 @@ export function SupportTicketCard({
 
             {/* Always on show rather than revealed on hover: a hover-only
               action is invisible until you happen to be over the right
-              card, and unreachable on touch entirely. Two icons cost less
-              room than the buttons they replace. */}
+              card, and unreachable on touch entirely. */}
             <div className="flex shrink-0 items-center">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -155,24 +152,6 @@ export function SupportTicketCard({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Ticket details</TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon-xs" asChild>
-                    {/* Opens in a new tab: the agent is mid-conversation
-                      here, and this is somewhere else to work. */}
-                    <a
-                      href={`/helpdesk?ticket=${ticket.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label="Open in Help Desk"
-                    >
-                      <IconArrowUpRight className="size-4" />
-                    </a>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Open in Help Desk</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -224,16 +203,6 @@ export function SupportTicketCard({
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDetails(false)}>
               Close
-            </Button>
-            <Button asChild>
-              <a
-                href={`/helpdesk?ticket=${ticket.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <IconExternalLink className="size-4" />
-                Open in Help Desk
-              </a>
             </Button>
           </DialogFooter>
         </DialogContent>

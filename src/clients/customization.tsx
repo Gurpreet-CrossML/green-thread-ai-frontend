@@ -23,12 +23,9 @@ import { isValidUrl, normalizeUrl } from "@/lib/url";
 import {
   applyServerFieldErrors,
   formikErrorsFromZod,
-  serverFieldErrors,
 } from "@/lib/form-errors";
 import CustomizationTheme from "@/components/custom/customization-theme";
-import CustomizationActionButtons from "@/components/custom/customization-action-buttons";
 import CustomizationBranding from "@/components/custom/customization-branding";
-import CustomizationQuickLinks from "@/components/custom/customization-quick-links";
 import CustomizationLivePreview from "@/components/custom/customization-live-preview";
 import type {
   ActionButton,
@@ -36,11 +33,21 @@ import type {
   QuickLinkItem,
 } from "@/components/custom/customization-types";
 
-const DEFAULT_PRIMARY = "#6c5ce7";
-const DEFAULT_SECONDARY = "#f3f4f6";
-const DEFAULT_TERTIARY = "#dfe6e9";
+// The tyre widget's built-in look: brand green, bot bubble and surface colours.
+const DEFAULT_PRIMARY = "#03a800";
+const DEFAULT_SECONDARY = "#eaf1ed";
+const DEFAULT_TERTIARY = "#f5f8f6";
 const DEFAULT_WELCOME = "What are you shopping for today?";
-const DEFAULT_GREETING = "Hi there! How can I help you today?";
+// The tyre widget's built-in greeting, per language (its i18n.ts). Saving it
+// unchanged stores no greeting, so the widget keeps showing it in each
+// visitor's own language; an edited greeting is shown to everyone as written.
+const TYRE_GREETINGS: Record<string, string> = {
+  en: "👋 **Let's try to find suitable tires for your vehicle! Please tell us what vehicle do you have and what kind of tires are you looking for!**",
+  fi: "👋 **Etsitään autoosi sopivat renkaat. Anna minulle ajoneuvosi tiedot ja minkälaisia renkaita etsit!**",
+  et: "👋 **Leiame teie sõidukile sobivad rehvid! Palun öelge, milline sõiduk teil on ja milliseid rehve otsite!**",
+  ru: "👋 **Давайте подберём подходящие шины для вашего автомобиля! Пожалуйста, укажите, какой у вас автомобиль и какие шины вы ищете!**",
+};
+const DEFAULT_GREETING = TYRE_GREETINGS.en;
 
 type CustomizationFormValues = {
   welcome_message: string;
@@ -52,10 +59,7 @@ type CustomizationFormValues = {
 const customizationValidationSchema = z
   .object({
     welcome_message: z.string(),
-    greeting_message: z
-      .string()
-      .trim()
-      .min(1, "Please enter a greeting message before saving."),
+    greeting_message: z.string(),
     quick_links: z.array(
       z.object({
         name: z.string(),
@@ -130,6 +134,9 @@ export default function Customization() {
   const store = stores.find((item) => item.code === storeCode);
   const storeId = store ? Number(store.id) : null;
   const storeLabel = store?.name ?? "Selected store";
+  // The tyre widget's own greeting in this store's language.
+  const builtInGreeting =
+    TYRE_GREETINGS[store?.default_language ?? ""] ?? DEFAULT_GREETING;
 
   const [savingAll, setSavingAll] = useState(false);
 
@@ -140,13 +147,7 @@ export default function Customization() {
   const [tertiaryColor, setTertiaryColor] = useState(DEFAULT_TERTIARY);
   const [tertiaryHexInput, setTertiaryHexInput] = useState(DEFAULT_TERTIARY);
 
-  const [welcomeMessage, setWelcomeMessage] = useState(DEFAULT_WELCOME);
   const [greetingMessage, setGreetingMessage] = useState(DEFAULT_GREETING);
-  /** Per-row field errors for Quick Links from the last rejected save,
-   *  indexed the same way as `quickLinks`. */
-  const [quickLinkRowErrors, setQuickLinkRowErrors] = useState<
-    Record<string, string>[]
-  >([]);
 
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -154,8 +155,6 @@ export default function Customization() {
 
   const [actionButtons, setActionButtons] = useState<ActionButton[]>([]);
   const [quickLinks, setQuickLinks] = useState<QuickLinkItem[]>([]);
-  const [hasQuickActionError, setHasQuickActionError] = useState(false);
-  const [hasQuickActionChanges, setHasQuickActionChanges] = useState(false);
   const formik = useFormik<CustomizationFormValues>({
     initialValues: {
       welcome_message: DEFAULT_WELCOME,
@@ -164,11 +163,7 @@ export default function Customization() {
       quick_actions: [],
     },
     enableReinitialize: true,
-    validate: (values) => {
-      const { errors, rowErrors } = customizationErrorsFromZod(values);
-      setQuickLinkRowErrors(rowErrors);
-      return errors;
-    },
+    validate: (values) => customizationErrorsFromZod(values).errors,
     onSubmit: async (values) => {
       if (storeId == null) return;
 
@@ -193,14 +188,18 @@ export default function Customization() {
         secondary_color: secondaryColor,
         tertiary_color: tertiaryColor,
         welcome_message: values.welcome_message,
-        greeting_message: values.greeting_message.trim(),
+        // Unchanged built-in greeting: store none, so the widget keeps
+        // translating it for each visitor.
+        greeting_message:
+          values.greeting_message.trim() === builtInGreeting.trim()
+            ? ""
+            : values.greeting_message.trim(),
         quick_actions: quickActions,
         quick_links: quickLinksPayload,
       };
 
       setSavingAll(true);
       formik.setErrors({});
-      setQuickLinkRowErrors([]);
       try {
         let result;
         if (logoFile) {
@@ -223,19 +222,8 @@ export default function Customization() {
         if (fulfilled) {
           formik.resetForm({ values });
           populate(result.payload as WidgetCustomizationDataResponse);
-          setHasQuickActionChanges(false);
         } else {
-          const errors = serverFieldErrors(result.payload);
-          const rowErrors: Record<string, string>[] = [];
-          for (const [key, message] of Object.entries(errors)) {
-            const match = /^quick_links\.(\d+)\.(.+)$/.exec(key);
-            if (!match) continue;
-            const index = Number(match[1]);
-            const field = match[2];
-            rowErrors[index] = { ...rowErrors[index], [field]: message };
-          }
           applyServerFieldErrors(formik, result.payload);
-          setQuickLinkRowErrors(rowErrors);
         }
       } finally {
         setSavingAll(false);
@@ -283,14 +271,13 @@ export default function Customization() {
       applyColor("primary", DEFAULT_PRIMARY);
       applyColor("secondary", DEFAULT_SECONDARY);
       applyColor("tertiary", DEFAULT_TERTIARY);
-      setWelcomeMessage(DEFAULT_WELCOME);
-      setGreetingMessage(DEFAULT_GREETING);
+      setGreetingMessage(builtInGreeting);
       setLogoUrl(null);
       setActionButtons([]);
       setQuickLinks([]);
       formik.setValues({
         welcome_message: DEFAULT_WELCOME,
-        greeting_message: DEFAULT_GREETING,
+        greeting_message: builtInGreeting,
         quick_links: [],
         quick_actions: [],
       });
@@ -303,7 +290,7 @@ export default function Customization() {
     const nextWelcome = data.welcome_message || DEFAULT_WELCOME;
     const nextGreeting = data.greeting_message?.trim()
       ? data.greeting_message
-      : DEFAULT_GREETING;
+      : builtInGreeting;
     const nextActionButtons = (data.quick_actions ?? []).map((action) => ({
       id: action.id,
       name: action.name,
@@ -316,7 +303,6 @@ export default function Customization() {
       priority: link.priority,
       active: link.is_active,
     }));
-    setWelcomeMessage(nextWelcome);
     setGreetingMessage(nextGreeting);
     setLogoUrl(data.logo?.trim() ? data.logo : null);
     setActionButtons(nextActionButtons);
@@ -376,68 +362,10 @@ export default function Customization() {
     formik.setErrors(next);
   };
 
-  const handleWelcomeChange = (value: string) => {
-    setWelcomeMessage(value);
-    formik.setFieldValue("welcome_message", value, false);
-    clearFieldError("welcome_message");
-  };
-
   const handleGreetingChange = (value: string) => {
     setGreetingMessage(value);
     formik.setFieldValue("greeting_message", value, false);
     clearFieldError("greeting_message");
-  };
-
-  const updateQuickLink = (index: number, patch: Partial<QuickLinkItem>) => {
-    setQuickLinks((prev) =>
-      prev.map((link, i) => (i === index ? { ...link, ...patch } : link)),
-    );
-    const nextLink = { ...quickLinks[index], ...patch };
-    formik.setFieldValue(
-      `quick_links.${index}`,
-      { name: nextLink.label, url: nextLink.url },
-      false,
-    );
-    clearFieldError("quick_links");
-    // Clear only the edited fields, keeping other field and row errors visible.
-    setQuickLinkRowErrors((prev) => {
-      if (!prev[index] || Object.keys(prev[index]).length === 0) return prev;
-      const next = [...prev];
-      next[index] = { ...prev[index] };
-      for (const key of Object.keys(patch)) {
-        delete next[index][
-          key === "label" ? "name" : key === "active" ? "is_active" : key
-        ];
-      }
-      return next;
-    });
-  };
-
-  const addQuickLink = () => {
-    setQuickLinks((prev) => [
-      ...prev,
-      { label: "", url: "", priority: prev.length + 1, active: true },
-    ]);
-    formik.setFieldValue(
-      "quick_links",
-      [...quickLinks, { label: "", url: "" }].map((link) => ({
-        name: link.label,
-        url: link.url,
-      })),
-      false,
-    );
-  };
-
-  const removeQuickLink = (index: number) => {
-    setQuickLinks((prev) => prev.filter((_, i) => i !== index));
-    formik.setFieldValue(
-      "quick_links",
-      quickLinks
-        .filter((_, i) => i !== index)
-        .map((link) => ({ name: link.label, url: link.url })),
-      false,
-    );
-    setQuickLinkRowErrors((prev) => prev.filter((_, i) => i !== index));
   };
 
   const normalizedQuickLinks = quickLinks
@@ -452,10 +380,6 @@ export default function Customization() {
       active: typeof link.active === "boolean" ? link.active : true,
     }))
     .filter((link) => link.label.trim().length > 0);
-
-  const previewQuickLinks = normalizedQuickLinks
-    .filter((link) => link.active)
-    .sort((a, b) => a.priority - b.priority);
 
   const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -504,52 +428,20 @@ export default function Customization() {
           applyColor={applyColor}
           handleHexChange={handleHexChange}
         />
-        <CustomizationActionButtons
-          fieldErrors={fieldErrors}
-          actionButtons={actionButtons}
-          onChange={setActionButtons}
-          validateActionButton={(button) => {
-            const values = {
-              ...formik.values,
-              quick_actions: [button],
-            };
-            const result = customizationValidationSchema.safeParse(values);
-            if (result.success) return {};
-            const errors = formikErrorsFromZod(result.error.issues) as {
-              quick_actions?: { name?: string; message?: string }[];
-            };
-            return errors.quick_actions?.[0] ?? {};
-          }}
-          onPendingErrorChange={setHasQuickActionError}
-          hasQuickActionChanges={hasQuickActionChanges}
-          onQuickActionChange={() => setHasQuickActionChanges(true)}
-          onInputChange={() => clearFieldError("quick_actions")}
-        />
         <CustomizationBranding
           fieldErrors={fieldErrors}
           logoUrl={logoUrl}
-          welcomeMessage={welcomeMessage}
           greetingMessage={greetingMessage}
-          onWelcomeChange={handleWelcomeChange}
           onGreetingChange={handleGreetingChange}
           onLogoUpload={handleLogoUpload}
           onRemoveLogo={removeLogo}
         />
-        <CustomizationQuickLinks
-          fieldErrors={fieldErrors}
-          quickLinks={quickLinks}
-          onUpdate={updateQuickLink}
-          onAdd={addQuickLink}
-          onRemove={removeQuickLink}
-          rowErrors={quickLinkRowErrors}
-        />
-
         <div className="flex justify-start border-t border-border py-3">
           <Button
             type="button"
             size="lg"
             onClick={() => formik.handleSubmit()}
-            disabled={savingAll || hasQuickActionError}
+            disabled={savingAll}
           >
             {savingAll ? (
               <Spinner data-icon="inline-start" />
@@ -565,13 +457,10 @@ export default function Customization() {
         <CustomizationLivePreview
           storeLabel={storeLabel}
           logoUrl={logoUrl}
-          welcomeMessage={welcomeMessage}
           greetingMessage={greetingMessage}
-          themeColor={themeColor}
-          secondaryColor={secondaryColor}
-          themeVars={themeVars}
-          actionButtons={actionButtons}
-          quickLinks={previewQuickLinks}
+          primaryColor={normalizeHex(themeColor) ?? DEFAULT_PRIMARY}
+          bubbleColor={normalizeHex(secondaryColor) ?? DEFAULT_SECONDARY}
+          surfaceColor={normalizeHex(tertiaryColor) ?? DEFAULT_TERTIARY}
         />
       </div>
     </div>

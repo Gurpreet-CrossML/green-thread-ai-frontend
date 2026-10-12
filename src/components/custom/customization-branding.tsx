@@ -26,7 +26,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Typography } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
@@ -38,12 +37,10 @@ const CKEditorTextArea = dynamic(
   },
 );
 
-const WELCOME_LIMIT = 500;
 const GREETING_LIMIT = 180;
 
 type CustomizationBrandingProps = {
   logoUrl: string | null;
-  welcomeMessage: string;
   greetingMessage: string;
   /**
    * Whatever the server rejected, keyed by its own field names. Some rules
@@ -51,7 +48,6 @@ type CustomizationBrandingProps = {
    * verdict has to land on the field rather than in a toast.
    */
   fieldErrors?: Record<string, string>;
-  onWelcomeChange: (value: string) => void;
   onGreetingChange: (value: string) => void;
   onLogoUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveLogo: () => void;
@@ -59,10 +55,8 @@ type CustomizationBrandingProps = {
 
 export default function CustomizationBranding({
   logoUrl,
-  welcomeMessage,
   greetingMessage,
   fieldErrors,
-  onWelcomeChange,
   onGreetingChange,
   onLogoUpload,
   onRemoveLogo,
@@ -76,7 +70,7 @@ export default function CustomizationBranding({
         <CardTitle className="flex items-center gap-2">
           <IconPhotoPlus className="size-4" />
           Branding &amp; Messages
-          <InfoIcon text="Your logo and the first messages customers see — the welcome message on the home tab and the greeting when the chat opens." />
+          <InfoIcon text="Your logo in the widget header, and the greeting the chat opens with." />
         </CardTitle>
         <CardDescription>
           The logo and messages customers see when they open the chat.
@@ -155,45 +149,17 @@ export default function CustomizationBranding({
 
         <Field className="gap-2">
           <div className="flex flex-col gap-1">
-            <FieldLabel htmlFor="welcome-message">Welcome Message</FieldLabel>
-            <FieldDescription>
-              Shown on the widget&apos;s home tab.
-            </FieldDescription>
-          </div>
-          <Input
-            id="welcome-message"
-            value={welcomeMessage}
-            onChange={(event) => onWelcomeChange(event.target.value)}
-            placeholder="What are you shopping for today?"
-            maxLength={WELCOME_LIMIT}
-          />
-          <div className="flex flex-col items-start gap-1">
-            <Typography variant="caption" className="order-2">
-              {welcomeMessage.length}/{WELCOME_LIMIT} characters
-            </Typography>
-            {fieldErrors?.welcome_message ? (
-              <Typography
-                variant="caption"
-                className="order-1 text-destructive"
-              >
-                {fieldErrors.welcome_message}
-              </Typography>
-            ) : null}
-          </div>
-        </Field>
-
-        <Separator />
-
-        <Field className="gap-2">
-          <div className="flex flex-col gap-1">
             <FieldLabel htmlFor="greeting-message">Greeting Message</FieldLabel>
             <FieldDescription>
-              The first message the chatbot sends when the chat opens.
+              The first message the chatbot sends when the chat opens. It
+              starts as the widget&apos;s own greeting: keep it unchanged and
+              each visitor sees it in their language; edit it and everyone sees
+              your text.
             </FieldDescription>
           </div>
           <CKEditorTextArea
             id="greeting-message"
-            placeholder="Hi there! How can I help you today?"
+            placeholder="Empty: the built-in greeting in the visitor's language"
             value={greetingMessage}
             useMarkdown
             onChange={onGreetingChange}

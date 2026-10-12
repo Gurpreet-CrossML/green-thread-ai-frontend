@@ -95,8 +95,9 @@ function queryMatches(currentSearch: string, entryQuery: string) {
  * when all of its params match. A bare-path entry is active for its path
  * and everything under it, but stands down when a sibling's query matches
  * — that sibling is the more specific answer. When several bare paths
- * match, the deepest one wins: on /settings/tags both "General"'s area
- * root and "Help Desk Tags" (/settings/tags) match, and the latter wins.
+ * match, the deepest one wins: on /settings/customisation both the area
+ * root and "Widget Customisation" (/settings/customisation) match, and the
+ * latter wins.
  *
  * Returns the winning url so callers compare by identity rather than each
  * re-deriving the rule.
@@ -304,19 +305,12 @@ export const sidebarMenus: SideBarMenus = {
       icon: IconMessage2,
       permission: "conversations",
     },
-    areaMenuItem("helpdesk", { permission: "conversations" }),
-    // Social AI is admin-only until its roles are decided.
-    areaMenuItem("socialAI", { adminOnly: true }),
-    areaMenuItem("crm", { permission: "conversations" }),
-    areaMenuItem("campaign"),
-    areaMenuItem("brandVoice", { adminOnly: true }),
     areaMenuItem("settings", { adminOnly: true }),
-    areaMenuItem("knowledge", { permission: "knowledge" }),
   ],
 
   navSubSidebar: {
-    // Every area in NAV_AREAS, Help Desk included — adding a screen or a
-    // filter there adds it to the sidebar with no change here.
+    // Every area in NAV_AREAS — adding a screen there adds it to the
+    // sidebar with no change here.
     ...areaSubSidebars(),
   },
 
