@@ -22,6 +22,9 @@ const THREAD_FILTER_KEYS = [
   "search",
   "is_active",
   "has_ticket",
+  "has_feedback",
+  "feedback_rating",
+  "user_type",
   "handled_by",
   "channel",
   "from",
@@ -117,7 +120,7 @@ export default function Threads() {
     storeCode,
     debouncedSearch,
     filters.is_active,
-
+    filters.user_type,
     filters.has_ticket,
     filters.has_feedback,
     filters.feedback_rating,

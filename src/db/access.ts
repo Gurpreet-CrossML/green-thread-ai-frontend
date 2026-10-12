@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql, type SQL, type Column } from "drizzle-orm";
 
-import { getDb, resolveStoreScope } from "@/lib/tenant-context";
-import { store, chatThread } from "@/lib/drizzle/schema";
+import { currentAccess, getDb, resolveStoreScope } from "@/lib/tenant-context";
+import { authUser, store, chatThread } from "@/lib/drizzle/schema";
 
 /**
  * Per-store access conditions for the dashboard data plane (F3).
@@ -20,6 +20,18 @@ import { store, chatThread } from "@/lib/drizzle/schema";
 
 // Matches no rows — used when the caller's accessible store set is empty.
 const MATCH_NONE: SQL = sql`false`;
+
+/** Scope analytics to threads currently assigned to the signed-in agent. */
+export function agentThreadScope(): SQL | null {
+  const { role, userEmail } = currentAccess();
+  if (role !== "agent") return null;
+  if (!userEmail) return MATCH_NONE;
+  const agentIds = getDb()
+    .select({ id: authUser.id })
+    .from(authUser)
+    .where(eq(authUser.email, userEmail));
+  return inArray(chatThread.chatHandlerUserId, agentIds);
+}
 
 /** Restrict a `store_id` column to the caller's accessible stores. */
 export function storeIdScope(

@@ -26,7 +26,7 @@ export type EngagementResponse = {
 
 export type OperationalEfficiencyResponse = {
   bot_resolution_rate: { percentage: number };
-  escalation_rate: { percentage: number };
+  escalation_rate: { count?: number; percentage: number };
 };
 
 export type ConversionRateResponse = {
@@ -273,10 +273,13 @@ type DashboardSummaryResponse = {
 
 export const FetchDashboard = createAsyncThunk(
   "FetchDashboard",
-  async (args: { storeCode: string }, thunkAPI) => {
+  async (args: { storeCode: string; from?: string; to?: string }, thunkAPI) => {
     try {
+      const params = new URLSearchParams({ store_code: args.storeCode });
+      if (args.from) params.set("from", args.from);
+      if (args.to) params.set("to", args.to);
       const response = await axiosInstance.get(
-        `${ENDPOINTS.fetchDashboard()}?store_code=${args.storeCode}`,
+        `${ENDPOINTS.fetchDashboard()}?${params.toString()}`,
       );
       return response.data.data as DashboardSummaryResponse;
     } catch (error) {

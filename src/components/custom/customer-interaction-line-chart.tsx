@@ -57,6 +57,7 @@ export function CustomerInteractionLineChart({
   to,
   onFromChange,
   onToChange,
+  onSelectPoint,
 }: {
   chartData: ChartPoint[];
   loading?: boolean;
@@ -66,6 +67,7 @@ export function CustomerInteractionLineChart({
   to: string;
   onFromChange: (value: string) => void;
   onToChange: (value: string) => void;
+  onSelectPoint?: (point: ChartPoint) => void;
 }) {
   return (
     <Card className="flex flex-col">
@@ -110,7 +112,29 @@ export function CustomerInteractionLineChart({
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex-1">
+      <CardContent
+        className={
+          onSelectPoint
+            ? "flex-1 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            : "flex-1"
+        }
+        role={onSelectPoint ? "link" : undefined}
+        tabIndex={onSelectPoint ? 0 : undefined}
+        aria-label={
+          onSelectPoint ? "View threads for this date range" : undefined
+        }
+        onClick={() => {
+          const point = chartData[0];
+          if (point) onSelectPoint?.(point);
+        }}
+        onKeyDown={(event) => {
+          if (onSelectPoint && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            const point = chartData[0];
+            if (point) onSelectPoint(point);
+          }
+        }}
+      >
         {loading ? (
           <div className="flex h-[300px] items-center justify-center gap-2 text-muted-foreground">
             <Spinner className="size-5" />
@@ -171,6 +195,7 @@ export function CustomerInteractionLineChart({
                 strokeWidth={2}
                 dot={granularity !== "hourly"}
                 activeDot={{ r: 5 }}
+                cursor={onSelectPoint ? "pointer" : undefined}
               />
             </LineChart>
           </ChartContainer>
