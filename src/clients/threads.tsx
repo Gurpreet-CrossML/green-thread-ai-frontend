@@ -117,6 +117,7 @@ export default function Threads() {
     storeCode,
     debouncedSearch,
     filters.is_active,
+
     filters.has_ticket,
     filters.has_feedback,
     filters.feedback_rating,
