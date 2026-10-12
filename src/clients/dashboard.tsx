@@ -25,7 +25,6 @@ import {
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { subMonths } from "date-fns";
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 import { IconDownload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,7 +61,6 @@ const defaultRange = (granularity: Granularity) => {
 
 export default function Dashboard() {
   const dispatch = useAppDispatch();
-  const { data: session } = useSession();
   const storeCode = useAppSelector(
     (state) => state.GetStoresReducer.selectedStore,
   );
@@ -192,14 +190,6 @@ export default function Dashboard() {
     },
   ];
 
-  // Export is deliberately a UI affordance for roles that may share metrics.
-  // The dashboard data itself remains server-scoped by withTenantRoute and the
-  // agent scope in db/access, so hiding this control is never the only guard.
-  const canExport =
-    session?.user?.is_staff ||
-    session?.user?.role === "admin" ||
-    session?.user?.role === "supervisor";
-
   const exportFileStem = `dashboard_${storeCode || "all-stores"}_${from}_to_${to}`;
 
   const exportCsv = () => {
@@ -320,24 +310,22 @@ export default function Dashboard() {
         title="Dashboard"
         description="How your AI assistant is performing — engagement, efficiency, sentiment, and conversions at a glance."
         action={
-          canExport ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline">
-                  <IconDownload />
-                  Export
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={exportCsv}>
-                  Export as CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={exportPdf}>
-                  Export as PDF
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : undefined
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline">
+                <IconDownload />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={exportCsv}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={exportPdf}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
       <section className="flex flex-col gap-4">

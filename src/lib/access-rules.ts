@@ -26,14 +26,10 @@ import type {
 export type RequestAccess = {
   isStaff: boolean;
   storeCodes: string[] | null;
-  /** Needed to restrict an agent's dashboard figures to their own threads. */
-  userEmail?: string | null;
-  role?: StaffRole | null;
 };
 
 /** The session identity fields these rules read. */
 export type SessionIdentity = {
-  email?: string | null;
   is_staff?: boolean;
   role?: StaffRole | null;
   company_code?: string | null;
@@ -86,8 +82,6 @@ export function buildAccess(identity: SessionIdentity): RequestAccess {
   return {
     isStaff: Boolean(identity.is_staff),
     storeCodes: unrestricted ? null : stores.map((s) => s.code),
-    userEmail: identity.email ?? null,
-    role: identity.role ?? null,
   };
 }
 

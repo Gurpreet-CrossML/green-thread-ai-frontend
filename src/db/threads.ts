@@ -1,9 +1,5 @@
 import { getDb } from "@/lib/tenant-context";
-import {
-  agentThreadScope,
-  storeIdScope,
-  scopedThreadFilter,
-} from "@/db/access";
+import { storeIdScope, scopedThreadFilter } from "@/db/access";
 import { FEEDBACK_RATING_VALUES } from "@/lib/config";
 import {
   chatThread,
@@ -158,8 +154,6 @@ export async function list_threads(
 
   const storeScope = storeIdScope(chatThread.storeId, filters.store_code);
   if (storeScope) conditions.push(storeScope);
-  const agentScope = agentThreadScope();
-  if (agentScope) conditions.push(agentScope);
 
   if (filters.is_active) {
     conditions.push(

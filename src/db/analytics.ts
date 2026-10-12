@@ -2,10 +2,9 @@ import {
   getDb,
   runSequentially,
   currentCompany,
-  currentAccess,
   resolveStoreScope,
 } from "@/lib/tenant-context";
-import { agentThreadScope, storeIdScope, threadIdScope } from "@/db/access";
+import { storeIdScope, threadIdScope } from "@/db/access";
 import { getCached, setCached } from "@/lib/dashboard-cache";
 import {
   chatThread,
@@ -131,8 +130,6 @@ export async function get_conversion_analytics(params: {
   ];
   const storeScope = storeIdScope(chatThread.storeId, params.store_code);
   if (storeScope) threadFilters.push(storeScope);
-  const agentScope = agentThreadScope();
-  if (agentScope) threadFilters.push(agentScope);
   const threadWhere = and(...threadFilters)!;
 
   // total_threads
@@ -280,8 +277,6 @@ export async function get_feedback_insights(params: {
   ];
   const storeScope = storeIdScope(chatThread.storeId, params.store_code);
   if (storeScope) threadFilters.push(storeScope);
-  const agentScope = agentThreadScope();
-  if (agentScope) threadFilters.push(agentScope);
   const threadWhere = and(...threadFilters)!;
   const threadSubquery = sql`(SELECT id FROM chat_thread WHERE ${threadWhere})`;
 
@@ -512,8 +507,6 @@ export async function get_user_matrix(params: {
   ];
   const storeScope = storeIdScope(chatThread.storeId, params.store_code);
   if (storeScope) filters.push(storeScope);
-  const agentScope = agentThreadScope();
-  if (agentScope) filters.push(agentScope);
 
   const [row] = await db
     .select({
@@ -547,8 +540,6 @@ export async function get_conversion_rate(params: {
   ];
   const storeScope = storeIdScope(chatThread.storeId, params.store_code);
   if (storeScope) filters.push(storeScope);
-  const agentScope = agentThreadScope();
-  if (agentScope) filters.push(agentScope);
   const threadWhere = and(...filters)!;
 
   const [{ total }] = await db
@@ -700,8 +691,6 @@ export async function get_engagements(params: {
   ];
   const storeScope = storeIdScope(chatThread.storeId, params.store_code);
   if (storeScope) threadFilters.push(storeScope);
-  const agentScope = agentThreadScope();
-  if (agentScope) threadFilters.push(agentScope);
   const threadWhere = and(...threadFilters)!;
   const threadSubquery = sql`(SELECT id FROM chat_thread WHERE ${threadWhere})`;
 
@@ -1008,8 +997,6 @@ export async function get_operational_efficiency(params: {
     ];
     const storeScope = storeIdScope(chatThread.storeId, params.store_code);
     if (storeScope) f.push(storeScope);
-    const agentScope = agentThreadScope();
-    if (agentScope) f.push(agentScope);
     return and(...f)!;
   };
 
@@ -1693,10 +1680,7 @@ export async function get_dashboard_summary(params: {
   if (!accessible) return EMPTY_DASHBOARD;
 
   // Tenant-prefixed cache key — never crosses companies.
-  const access = currentAccess();
-  // Role/email must be included so an agent's private result cannot populate
-  // the cache entry later served to another person.
-  const key = `${currentCompany()}:${access.role ?? ""}:${access.userEmail ?? ""}:${params.store_code ?? ""}:${params.from ?? ""}:${params.to ?? ""}`;
+  const key = `${currentCompany()}:${params.store_code ?? ""}:${params.from ?? ""}:${params.to ?? ""}`;
   const cached = getCached<DashboardSummary>(key);
   if (cached) return cached;
 
