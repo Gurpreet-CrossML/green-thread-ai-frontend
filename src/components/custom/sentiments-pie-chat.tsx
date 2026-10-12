@@ -36,10 +36,8 @@ const chartConfig = {
 
 export function SentimentsPieChart({
   data,
-  onSelectSentiment,
 }: {
   data: { sentiment: string; score: number; fill: string }[];
-  onSelectSentiment?: (sentiment: string) => void;
 }) {
   return (
     <Card className="flex flex-col">
@@ -67,10 +65,6 @@ export function SentimentsPieChart({
               nameKey="sentiment"
               innerRadius={60}
               strokeWidth={5}
-              className={onSelectSentiment ? "cursor-pointer" : undefined}
-              onClick={(_, index) =>
-                onSelectSentiment?.(data[index]?.sentiment ?? "")
-              }
             />
             <ChartLegend
               content={

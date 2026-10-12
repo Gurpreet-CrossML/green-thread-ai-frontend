@@ -25,7 +25,6 @@ import {
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { subMonths } from "date-fns";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { IconDownload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -36,20 +35,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type ThreadDrillDownFilters = Partial<
-  Record<
-    "is_active" | "has_ticket" | "handled_by" | "user_type" | "feedback_rating",
-    string
-  >
->;
-
 type SummaryMetric = {
   label: string;
   value: string;
   infoText: string;
   status: string;
   statusVariant: "success" | "warning" | "neutral" | "info";
-  threadFilters?: ThreadDrillDownFilters;
 };
 
 const toISODate = (date: Date) => date.toISOString().slice(0, 10);
@@ -71,7 +62,6 @@ const defaultRange = (granularity: Granularity) => {
 
 export default function Dashboard() {
   const dispatch = useAppDispatch();
-  const router = useRouter();
   const { data: session } = useSession();
   const storeCode = useAppSelector(
     (state) => state.GetStoresReducer.selectedStore,
@@ -114,13 +104,13 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (!storeCode || !from || !to) return;
+    if (!storeCode) return;
     // One consolidated request for all five summary widgets (feedback insights,
-    // engagement, operational efficiency, user matrix, conversion rate). It
-    // shares the visible dashboard date range with conversation history so a
-    // metric and its Threads drill-down describe the same window.
-    dispatch(FetchDashboard({ storeCode, from, to }));
-  }, [dispatch, storeCode, from, to]);
+    // engagement, operational efficiency, user matrix, conversion rate) — see
+    // /api/analytics/dashboard. Conversation history stays separate as it has
+    // its own date-range controls.
+    dispatch(FetchDashboard({ storeCode }));
+  }, [dispatch, storeCode]);
 
   useEffect(() => {
     if (!storeCode || !from || !to) return;
@@ -167,7 +157,6 @@ export default function Dashboard() {
         "Shows the number of sessions currently marked as active in the analytics data, helping you gauge current engagement.",
       status: "Currently Active",
       statusVariant: "neutral" as const,
-      threadFilters: { is_active: "true" },
     },
     {
       label: "Avg Response Time",
@@ -192,16 +181,14 @@ export default function Dashboard() {
         "Shows the share of conversations that were fully resolved by the chatbot without needing handoff to a human agent.",
       status: "Resolution Metric",
       statusVariant: "info" as const,
-      threadFilters: { has_ticket: "false" },
     },
     {
       label: "Escalation Rate",
       value: `${FetchOperationalEfficiencyData?.escalation_rate?.percentage || 0}%`,
       infoText:
         "Shows the share of conversations that needed to be escalated to a human agent, which can highlight where the bot needs support.",
-      status: `${FetchOperationalEfficiencyData?.escalation_rate?.count ?? 0} handoffs`,
+      status: "Escalation Metric",
       statusVariant: "info" as const,
-      threadFilters: { handled_by: "ai_to_agent" },
     },
   ];
 
@@ -250,14 +237,6 @@ export default function Dashboard() {
     window.setTimeout(() => {
       document.title = previousTitle;
     }, 0);
-  };
-
-  const openThreads = (filters?: ThreadDrillDownFilters) => {
-    const params = new URLSearchParams({ from, to });
-    Object.entries(filters ?? {}).forEach(([key, value]) => {
-      if (value) params.set(key, value);
-    });
-    router.push(`/threads?${params.toString()}`);
   };
 
   const sentimentPieChartData = [
@@ -372,21 +351,7 @@ export default function Dashboard() {
               info: "bg-primary/10 text-primary",
             };
             return (
-              <Card
-                key={metric.label}
-                size="sm"
-                role="link"
-                tabIndex={0}
-                aria-label={`View threads for ${metric.label}`}
-                className="cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => openThreads(metric.threadFilters)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    openThreads(metric.threadFilters);
-                  }
-                }}
-              >
+              <Card key={metric.label} size="sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-1.5">
                     <Typography variant="muted" as="h3">
@@ -413,27 +378,9 @@ export default function Dashboard() {
         </div>
       </section>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <SentimentsPieChart
-          data={sentimentPieChartData}
-          onSelectSentiment={(sentiment) => {
-            const feedbackRating = {
-              positive: "excellent",
-              neutral: "good",
-              negative: "bad",
-            }[sentiment];
-            openThreads(
-              feedbackRating ? { feedback_rating: feedbackRating } : undefined,
-            );
-          }}
-        />
-        <PerformanceRadialChart
-          chartData={performanceRadialChartData}
-          onSelectMetric={() => openThreads()}
-        />
-        <GuestVsSignedUserRadialChart
-          chartData={userActivityChartData}
-          onSelectUserType={(user_type) => openThreads({ user_type })}
-        />
+        <SentimentsPieChart data={sentimentPieChartData} />
+        <PerformanceRadialChart chartData={performanceRadialChartData} />
+        <GuestVsSignedUserRadialChart chartData={userActivityChartData} />
       </div>
       <CustomerInteractionLineChart
         chartData={conversationHistoryChartData}
@@ -444,7 +391,6 @@ export default function Dashboard() {
         to={to}
         onFromChange={setFrom}
         onToChange={setTo}
-        onSelectPoint={() => openThreads()}
       />
     </div>
   );

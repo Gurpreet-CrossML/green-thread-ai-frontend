@@ -42,10 +42,8 @@ const chartConfig = {
 
 export function PerformanceRadialChart({
   chartData,
-  onSelectMetric,
 }: {
   chartData: { metric: string; value: number; fill: string }[];
-  onSelectMetric?: (metric: string) => void;
 }) {
   return (
     <Card className="flex flex-col">
@@ -72,14 +70,7 @@ export function PerformanceRadialChart({
               cursor={false}
               content={<ChartTooltipContent hideLabel nameKey="metric" />}
             />
-            <RadialBar
-              dataKey="value"
-              background
-              cursor={onSelectMetric ? "pointer" : undefined}
-              onClick={(_, index) =>
-                onSelectMetric?.(chartData[index]?.metric ?? "")
-              }
-            >
+            <RadialBar dataKey="value" background>
               <LabelList
                 position="insideStart"
                 dataKey="metric"

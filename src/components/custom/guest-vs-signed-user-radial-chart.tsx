@@ -30,10 +30,8 @@ const chartConfig = {
 
 export function GuestVsSignedUserRadialChart({
   chartData,
-  onSelectUserType,
 }: {
   chartData: { month: string; guest: number; signed: number }[];
-  onSelectUserType?: (userType: "guest" | "logged_in") => void;
 }) {
   const totalVisitors = chartData[0].guest + chartData[0].signed;
 
@@ -63,8 +61,6 @@ export function GuestVsSignedUserRadialChart({
               stackId="a"
               cornerRadius={5}
               className="stroke-transparent stroke-2"
-              cursor={onSelectUserType ? "pointer" : undefined}
-              onClick={() => onSelectUserType?.("guest")}
             />
             <RadialBar
               dataKey="signed"
@@ -72,8 +68,6 @@ export function GuestVsSignedUserRadialChart({
               cornerRadius={5}
               fill="var(--color-signed)"
               className="stroke-transparent stroke-2"
-              cursor={onSelectUserType ? "pointer" : undefined}
-              onClick={() => onSelectUserType?.("logged_in")}
             />
             <ChartTooltip
               cursor={false}

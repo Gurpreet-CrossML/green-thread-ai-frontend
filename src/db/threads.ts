@@ -55,7 +55,7 @@ export type ListThreadsFilters = {
   has_feedback?: string;
   feedback_rating?: string; // very_bad | bad | neutral | good | excellent
   tags?: string[]; // matches threads tagged with ANY of the given tags
-  handled_by?: string; // ai | human | ai_to_agent
+  handled_by?: string; // ai | human
   channel?: string[]; // whatsapp | web (native/webhook)
   assignee?: string[]; // auth.User email values
   need_escalation?: string;
@@ -68,19 +68,9 @@ function isValidUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
 
-const APP_TZ = "Asia/Kolkata";
-
-/** Format a date in the same timezone used by the dashboard analytics. */
-function toAppDateString(date: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((item) => item.type === type)!.value;
-  return `${part("year")}-${part("month")}-${part("day")}`;
+/** Format a Date as YYYY-MM-DD (UTC), matching Django's date() handling. */
+function toDateString(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -186,21 +176,10 @@ export async function list_threads(
     );
   }
 
-  // This deliberately matches get_operational_efficiency: a closed thread
-  // which has a support ticket. `need_escalation` only means it is awaiting
-  // attention, so it would make the card and the Threads count disagree.
-  if (filters.handled_by === "ai_to_agent") {
-    conditions.push(eq(chatThread.isActive, false));
-    conditions.push(
-      sql`EXISTS (SELECT 1 FROM ${supportTicket} WHERE ${supportTicket.threadId} = ${chatThread.id})`,
-    );
-  }
-
-  // Date-only filters are calendar dates in the dashboard's timezone.
+  // Date/time range on created_at, defaulting to the last 30 days (inclusive).
   const now = new Date();
-  const today = toAppDateString(now);
-  const todayUtc = new Date(`${today}T00:00:00Z`);
-  const defaultEnd = new Date(`${today}T23:59:59.999Z`);
+  const todayUtc = new Date(`${toDateString(now)}T00:00:00Z`);
+  const defaultEnd = new Date(`${toDateString(now)}T23:59:59.999Z`);
 
   const parsedFrom = filters.from
     ? parseDateTimeFilter(filters.from, "start")
@@ -225,18 +204,9 @@ export async function list_threads(
     startDate = new Date(todayUtc.getTime() - 30 * 24 * 60 * 60 * 1000);
   }
 
-  if (
-    (!filters.from || DATE_ONLY_RE.test(filters.from)) &&
-    (!filters.to || DATE_ONLY_RE.test(filters.to))
-  ) {
-    conditions.push(
-      sql`(${chatThread.createdAt} AT TIME ZONE 'Asia/Kolkata')::date BETWEEN ${toAppDateString(startDate)}::date AND ${toAppDateString(endDate)}::date`,
-    );
-  } else {
-    conditions.push(
-      sql`${chatThread.createdAt} BETWEEN ${startDate} AND ${endDate}`,
-    );
-  }
+  conditions.push(
+    sql`${chatThread.createdAt} BETWEEN ${startDate} AND ${endDate}`,
+  );
 
   if (filters.search) {
     const search = filters.search;
