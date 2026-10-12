@@ -538,7 +538,7 @@ export default function MessagePan({
                   {!isCustomer && (
                     <Avatar className="h-7 w-7 shrink-0 mt-1">
                       <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                        {isAgentMessage ? "H" : "AI"}
+                        {isAgentMessage ? "U" : "AI"}
                       </AvatarFallback>
                     </Avatar>
                   )}
