@@ -440,6 +440,72 @@ function ThreadChatControls({
           </motion.div>
         )}
 
+        {/* LC-02: while the AI handles the chat the composer only takes
+            internal notes (staff-only; the customer never sees them). The
+            Take Over card above is untouched. */}
+        {!connectedAgent && (
+          <motion.div
+            key="ai-note-composer"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="mt-2 space-y-2"
+          >
+            <div className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm">
+              <div className="flex items-center gap-1.5 border-b border-border/50 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <IconLock className="size-3.5 text-primary" />
+                Internal note only — visible to your team, never to the customer
+              </div>
+              <div className="px-3 pt-1">
+                <textarea
+                  rows={1}
+                  placeholder="Write an internal note (customer won't see it)…"
+                  value={noteMessage}
+                  disabled={isSavingInternalNote || transitionState !== "idle"}
+                  onChange={(event) => setNoteMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      onSendInternalNote();
+                    }
+                  }}
+                  className="max-h-30 w-full resize-none bg-transparent py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                />
+              </div>
+              <div className="flex items-center gap-1 px-2 py-1">
+                <Typography
+                  variant="muted"
+                  as="span"
+                  className="ml-1 hidden truncate sm:inline"
+                >
+                  Enter to save note · Shift + Enter for a new line
+                </Typography>
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={onSendInternalNote}
+                    disabled={
+                      noteMessage.trim().length === 0 ||
+                      isSavingInternalNote ||
+                      transitionState !== "idle"
+                    }
+                    title="Save internal note"
+                  >
+                    {isSavingInternalNote ? (
+                      <Spinner className="size-4" />
+                    ) : (
+                      <IconNote className="size-4" />
+                    )}
+                    Add note
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {connectedAgent && connectedAgent !== user && (
           <motion.div
             key="other-agent"
@@ -484,52 +550,11 @@ function ThreadChatControls({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className={cn(
-              "overflow-hidden rounded-xl border shadow-xs transition-shadow focus-within:shadow-sm",
-              isInternalNoteMode
-                ? "border-dashed border-primary/40 bg-primary/5 focus-within:border-primary/60"
-                : "border-border/60 bg-background focus-within:border-primary/50",
-            )}
+            className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm"
           >
-            {/* Reply and Internal note are two modes of one composer, so they
-                sit together on top of it as tabs rather than as a button
-                beside Send. */}
-            <div
-              role="tablist"
-              aria-label="Composer mode"
-              className="flex items-center gap-1 border-b border-border/50 px-2 pt-2"
-            >
-              {(
-                [
-                  { id: false, label: "Reply", Icon: IconSend },
-                  { id: true, label: "Internal note", Icon: IconNote },
-                ] as const
-              ).map(({ id, label, Icon }) => {
-                const active = isInternalNoteMode === id;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    disabled={transitionState !== "idle"}
-                    onClick={() => setIsInternalNoteMode(id)}
-                    className={cn(
-                      "-mb-px flex items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                      active
-                        ? "border-primary text-primary"
-                        : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-3.5" />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
             {isInternalNoteMode && (
-              <div className="flex items-center gap-1.5 border-b border-dashed border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">
-                <IconLock className="size-3.5" />
+              <div className="flex items-center gap-1.5 border-b border-border/50 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <IconLock className="size-3.5 text-primary" />
                 Only visible to your team — the customer won&apos;t see this
               </div>
             )}
@@ -730,6 +755,18 @@ function ThreadChatControls({
                 </motion.div>
                 <Button
                   type="button"
+                  variant={isInternalNoteMode ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setIsInternalNoteMode((value) => !value)}
+                  disabled={transitionState !== "idle"}
+                >
+                  <IconNote className="size-4" />
+                  {isInternalNoteMode
+                    ? "Send as Reply"
+                    : "Send as Internal Note"}
+                </Button>
+                <Button
+                  type="button"
                   size="sm"
                   onClick={
                     isInternalNoteMode ? onSendInternalNote : onSendAgentMessage
@@ -745,12 +782,8 @@ function ThreadChatControls({
                         : "Send message"
                   }
                 >
-                  {isInternalNoteMode ? (
-                    <IconNote className="size-4" />
-                  ) : (
-                    <IconSend className="size-4" />
-                  )}
-                  {isInternalNoteMode ? "Add note" : "Send"}
+                  <IconSend className="size-4" />
+                  Send
                 </Button>
               </div>
             </div>
@@ -1469,8 +1502,9 @@ export default function Support() {
   const handleSendInternalNote = useCallback(async () => {
     const message = noteMessage.trim();
     if (!message || !activeThreadId) return;
-    // Notes are an agent-only action: the chat must be taken over by you first.
-    if (!connectedAgent || connectedAgent !== session?.user?.email) return;
+    // Notes are allowed while the AI handles the chat (nobody holds it) or
+    // when you hold it; never on a chat another agent holds.
+    if (connectedAgent && connectedAgent !== session?.user?.email) return;
 
     try {
       const note = await dispatch(
@@ -1748,6 +1782,26 @@ export default function Support() {
       const data = JSON.parse(event.data);
 
       if (data?.success && data?.action_type === "message" && data?.chunk) {
+        return;
+      }
+
+      // LC-02: the AI started/finished a turn. Carries no message, so it must
+      // not fall through to the message branch (its empty final_update would
+      // be appended as a blank message).
+      if (
+        data?.success &&
+        typeof data?.ai_responding === "boolean" &&
+        !data?.final_update?.id &&
+        data?.action_type !== "handler_change"
+      ) {
+        const threadId = activeThreadIdRef.current;
+        setLocalThreads((prev) =>
+          prev.map((thread) =>
+            thread.id === threadId
+              ? { ...thread, ai_responding: data.ai_responding }
+              : thread,
+          ),
+        );
         return;
       }
 
