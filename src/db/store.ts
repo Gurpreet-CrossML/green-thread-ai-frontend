@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/tenant-context";
+import { getDb } from "@/lib/request-context";
 import { store } from "@/lib/drizzle/schema";
 import { storeCodeScope } from "@/db/access";
 import { asc } from "drizzle-orm";
@@ -9,7 +9,7 @@ import { asc } from "drizzle-orm";
  * serialized with StoreListSerializer fields (id, name, code).
  *
  * Scoped (F3): staff only see the stores granted to them; admins/superuser see
- * all stores in the active tenant.
+ * all stores.
  */
 export async function list_stores() {
   const db = getDb();

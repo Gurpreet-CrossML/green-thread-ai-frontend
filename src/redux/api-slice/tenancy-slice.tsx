@@ -3,7 +3,7 @@ import { axiosInstance } from "@/redux/axios-config";
 import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import { ENDPOINTS } from "@/lib/config";
-import type { StaffRole } from "@/lib/tenant-types";
+import type { StaffRole } from "@/lib/access-types";
 
 /**
  * Company & staff management (Django `/api/tenancy/`). These are Django-owned
@@ -13,7 +13,7 @@ import type { StaffRole } from "@/lib/tenant-types";
 
 export type CompanyProfile = {
   name: string;
-  schema_name: string;
+  code: string;
   logo: string | null;
   email: string | null;
   phone: string | null;
@@ -35,7 +35,7 @@ export type StaffMember = {
   is_staff: boolean;
 };
 
-/** Editable company profile fields (name/schema_name/is_active are read-only). */
+/** Editable company profile fields (name/code/is_active are read-only). */
 export type CompanyProfileUpdate = {
   email?: string;
   phone?: string;

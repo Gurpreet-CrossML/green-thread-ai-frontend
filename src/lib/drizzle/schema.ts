@@ -598,79 +598,6 @@ export const djangoSession = pgTable(
   ],
 );
 
-export const companyDomain = pgTable(
-  "company_domain",
-  {
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({
-      name: "company_domain_id_seq",
-      startWith: 1,
-      increment: 1,
-      minValue: 1,
-      maxValue: 9223372036854775807,
-      cache: 1,
-    }),
-    domain: varchar({ length: 253 }).notNull(),
-    isPrimary: boolean("is_primary").notNull(),
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    tenantId: bigint("tenant_id", { mode: "number" }).notNull(),
-  },
-  (table) => [
-    index("company_domain_domain_a41c83b2_like").using(
-      "btree",
-      table.domain.asc().nullsLast().op("varchar_pattern_ops"),
-    ),
-    index("company_domain_is_primary_5a4983ec").using(
-      "btree",
-      table.isPrimary.asc().nullsLast().op("bool_ops"),
-    ),
-    index("company_domain_tenant_id_7b933fbc").using(
-      "btree",
-      table.tenantId.asc().nullsLast().op("int8_ops"),
-    ),
-    foreignKey({
-      columns: [table.tenantId],
-      foreignColumns: [company.id],
-      name: "company_domain_tenant_id_7b933fbc_fk_company_id",
-    }),
-    unique("company_domain_domain_key").on(table.domain),
-  ],
-);
-
-export const threadRegistry = pgTable(
-  "thread_registry",
-  {
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({
-      name: "thread_registry_id_seq",
-      startWith: 1,
-      increment: 1,
-      minValue: 1,
-      maxValue: 9223372036854775807,
-      cache: 1,
-    }),
-    threadId: uuid("thread_id").notNull(),
-    createdAt: timestamp("created_at", {
-      withTimezone: true,
-      mode: "string",
-    }).notNull(),
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    companyId: bigint("company_id", { mode: "number" }).notNull(),
-  },
-  (table) => [
-    index("thread_registry_company_id_7576e8a9").using(
-      "btree",
-      table.companyId.asc().nullsLast().op("int8_ops"),
-    ),
-    foreignKey({
-      columns: [table.companyId],
-      foreignColumns: [company.id],
-      name: "thread_registry_company_id_7576e8a9_fk_company_id",
-    }),
-    unique("thread_registry_thread_id_key").on(table.threadId),
-  ],
-);
-
 export const ticketMessageDraft = pgTable(
   "ticket_message_draft",
   {
@@ -781,55 +708,6 @@ export const companyMembership = pgTable(
       name: "company_membership_user_id_21a9cb1c_fk_auth_user_id",
     }),
     unique("unique_user_company_membership").on(table.companyId, table.userId),
-  ],
-);
-
-export const storeRegistry = pgTable(
-  "store_registry",
-  {
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({
-      name: "store_registry_id_seq",
-      startWith: 1,
-      increment: 1,
-      minValue: 1,
-      maxValue: 9223372036854775807,
-      cache: 1,
-    }),
-    code: varchar({ length: 255 }).notNull(),
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    storePk: bigint("store_pk", { mode: "number" }).notNull(),
-    createdAt: timestamp("created_at", {
-      withTimezone: true,
-      mode: "string",
-    }).notNull(),
-    updatedAt: timestamp("updated_at", {
-      withTimezone: true,
-      mode: "string",
-    }).notNull(),
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    companyId: bigint("company_id", { mode: "number" }).notNull(),
-    baseUrl: varchar("base_url", { length: 200 }).notNull(),
-  },
-  (table) => [
-    index("store_registry_code_63f1a96a_like").using(
-      "btree",
-      table.code.asc().nullsLast().op("varchar_pattern_ops"),
-    ),
-    index("store_registry_company_id_8c6eaa64").using(
-      "btree",
-      table.companyId.asc().nullsLast().op("int8_ops"),
-    ),
-    uniqueIndex("unique_store_registry_base_url")
-      .using("btree", table.baseUrl.asc().nullsLast().op("text_ops"))
-      .where(sql`(NOT ((base_url)::text = ''::text))`),
-    foreignKey({
-      columns: [table.companyId],
-      foreignColumns: [company.id],
-      name: "store_registry_company_id_8c6eaa64_fk_company_id",
-    }),
-    unique("store_registry_code_key").on(table.code),
-    check("store_registry_store_pk_check", sql`store_pk >= 0`),
   ],
 );
 
@@ -4949,7 +4827,7 @@ export const company = pgTable(
       maxValue: 9223372036854775807,
       cache: 1,
     }),
-    schemaName: varchar("schema_name", { length: 63 }).notNull(),
+    code: varchar({ length: 63 }).notNull(),
     name: varchar({ length: 255 }).notNull(),
     logo: varchar({ length: 255 }),
     email: varchar({ length: 254 }),
@@ -4983,15 +4861,15 @@ export const company = pgTable(
       "btree",
       table.name.asc().nullsLast().op("varchar_pattern_ops"),
     ),
-    index("company_schema_name_09f104c8_like").using(
+    index("company_code_like").using(
       "btree",
-      table.schemaName.asc().nullsLast().op("varchar_pattern_ops"),
+      table.code.asc().nullsLast().op("varchar_pattern_ops"),
     ),
     index("company_state_id_b89c18c4").using(
       "btree",
       table.stateId.asc().nullsLast().op("int4_ops"),
     ),
-    unique("company_schema_name_key").on(table.schemaName),
+    unique("company_code_key").on(table.code),
     unique("company_name_key").on(table.name),
   ],
 );

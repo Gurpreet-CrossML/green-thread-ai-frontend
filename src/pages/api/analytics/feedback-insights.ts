@@ -2,10 +2,10 @@ import { get_feedback_insights } from "@/db/analytics";
 import { APIResponse } from "@/lib/config";
 import { createAPIResponse, handleApiError } from "@/lib/helpers";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { withTenantRoute } from "@/lib/with-tenant-route";
+import { withSessionRoute } from "@/lib/with-session-route";
 
 // Mirrors Django FeedbackInsightsAPIView + FeedbackInsightsSerializer.
-export default withTenantRoute(handler, "team_metrics");
+export default withSessionRoute(handler, "team_metrics");
 
 async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   if (req.method !== "GET") {

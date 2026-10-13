@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/tenant-context";
+import { getDb } from "@/lib/request-context";
 import { storeIdScope, scopedThreadFilter } from "@/db/access";
 import { FEEDBACK_RATING_VALUES } from "@/lib/config";
 import {

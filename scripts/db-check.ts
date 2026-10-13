@@ -10,8 +10,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { resolveRefSchema } from "./ref-schema";
-
 const COMMITTED = path.join(process.cwd(), "src/lib/drizzle/schema.ts");
 
 // Compare structurally, ignoring formatting/whitespace differences (the
@@ -21,11 +19,9 @@ function canonical(src: string): string {
 }
 
 async function main() {
-  // Auto-resolve an existing tenant schema (never hard-coded); pass it through.
-  const ref = await resolveRefSchema();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "drizzle-check-"));
   try {
-    const env = { ...process.env, DRIZZLE_OUT: tmp, DRIZZLE_REF_SCHEMA: ref };
+    const env = { ...process.env, DRIZZLE_OUT: tmp };
     // 1. Re-introspect into the temp dir.
     execFileSync(process.execPath, ["node_modules/.bin/drizzle-kit", "pull"], {
       env,

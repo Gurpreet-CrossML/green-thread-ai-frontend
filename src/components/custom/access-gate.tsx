@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/empty";
 import { can } from "@/lib/access-rules";
 import { firstVisibleNavUrl } from "@/lib/sidebar-navs";
-import type { Permission } from "@/lib/tenant-types";
+import type { Permission } from "@/lib/access-types";
 
 /**
  * Shows its page only to a role that may read `permission` (no permission =

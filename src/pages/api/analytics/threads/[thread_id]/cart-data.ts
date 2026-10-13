@@ -2,14 +2,14 @@ import { get_cart_data } from "@/db/threads";
 import { APIResponse } from "@/lib/config";
 import { createAPIResponse } from "@/lib/helpers";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { withTenantRoute } from "@/lib/with-tenant-route";
+import { withSessionRoute } from "@/lib/with-session-route";
 
 /**
  * GET /analytics/threads/{thread_id}/cart-data/  ->  CartDataAPIView.
  * When no UserMetadata row exists, returns 404 with
  * "No cart data found for this thread" and data {}.
  */
-export default withTenantRoute(handler, "conversations");
+export default withSessionRoute(handler, "conversations");
 
 async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   if (req.method !== "GET") {

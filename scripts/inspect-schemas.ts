@@ -3,10 +3,9 @@
  *
  * Run: `npm run db:inspect`  (loads .env via tsx --env-file).
  *
- * Django (django-tenants) owns the schema. This script never mutates anything;
- * it only reads `information_schema` so we can see drift between the live DB and
- * the committed Drizzle `schema.ts`, and pick a reference tenant schema for
- * introspection (see DRIZZLE_REF_SCHEMA / scripts/normalize-drizzle.ts).
+ * Django owns the schema. This script never mutates anything; it only reads
+ * `information_schema` so we can see drift between the live DB and the
+ * committed Drizzle `schema.ts`.
  */
 import { Pool } from "pg";
 
@@ -45,15 +44,9 @@ async function main() {
     }
 
     for (const [schema, names] of bySchema) {
-      const tag = schema === "public" ? " (shared)" : " (tenant)";
-      console.log(`\n=== ${schema}${tag} — ${names.length} tables ===`);
+      console.log(`\n=== ${schema} — ${names.length} tables ===`);
       console.log(names.join(", ") || "(none)");
     }
-
-    const tenantSchemas = [...bySchema.keys()].filter((s) => s !== "public");
-    console.log(
-      `\nTenant schemas (${tenantSchemas.length}): ${tenantSchemas.join(", ") || "(none)"}`,
-    );
   } finally {
     await pool.end();
   }

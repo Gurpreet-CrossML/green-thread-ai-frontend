@@ -322,7 +322,7 @@ export default function CompanyProfileForm({
                   as="span"
                   className="font-mono text-base"
                 >
-                  {companyProfile?.schema_name || "—"}
+                  {companyProfile?.code || "—"}
                 </Typography>
               </div>
             </div>

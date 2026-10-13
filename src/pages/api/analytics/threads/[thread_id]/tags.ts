@@ -2,12 +2,12 @@ import { get_thread_tags } from "@/db/threads";
 import { APIResponse } from "@/lib/config";
 import { createAPIResponse } from "@/lib/helpers";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { withTenantRoute } from "@/lib/with-tenant-route";
+import { withSessionRoute } from "@/lib/with-session-route";
 
 /**
  * GET /analytics/threads/{thread_id}/tags/  ->  ThreadTagsAPIView.
  */
-export default withTenantRoute(handler, "conversations");
+export default withSessionRoute(handler, "conversations");
 
 async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   if (req.method !== "GET") {

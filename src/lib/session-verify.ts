@@ -1,5 +1,5 @@
 import { ENDPOINTS } from "@/lib/config";
-import type { Identity } from "@/lib/tenant-types";
+import type { Identity } from "@/lib/access-types";
 
 /**
  * Server-side session validity check against Django's verify-token, used to
@@ -7,7 +7,7 @@ import type { Identity } from "@/lib/tenant-types";
  *
  * Why here and not in proxy.ts: Next 16 Proxy is for fast, optimistic checks —
  * not slow fetches or session management (and it shouldn't rely on globals). So
- * the authoritative check runs in the Node route layer (withTenantRoute), once
+ * the authoritative check runs in the Node route layer (withSessionRoute), once
  * per request, with a short in-memory cache so it's at most one Django call per
  * minute per session rather than one per request.
  *
@@ -74,7 +74,7 @@ async function verifyAndCache(accessToken: string): Promise<boolean> {
 }
 
 /**
- * Refresh a session's tenant/identity claims from Django's profile endpoint.
+ * Refresh a session's company/identity claims from Django's profile endpoint.
  *
  * Role, permissions and company membership can change server-side after a
  * token is issued, so the NextAuth `jwt` callback periodically re-pulls the
@@ -84,7 +84,7 @@ async function verifyAndCache(accessToken: string): Promise<boolean> {
  *
  * Fails OPEN: any non-200 / network error returns null, and the caller keeps
  * the existing token claims (a Django hiccup must not strip a live session of
- * its tenant).
+ * its company).
  */
 const identityCache = new Map<
   string,

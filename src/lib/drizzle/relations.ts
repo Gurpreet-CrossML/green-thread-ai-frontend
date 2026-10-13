@@ -17,12 +17,9 @@ import {
   integration,
   integrationAttribute,
   company,
-  companyDomain,
-  threadRegistry,
   supportTicket,
   ticketMessageDraft,
   companyMembership,
-  storeRegistry,
   supportTicketAssignmentAudit,
   supportTicketStatusAudit,
   personaIdentity,
@@ -276,30 +273,13 @@ export const integrationAttributeRelations = relations(
   }),
 );
 
-export const companyDomainRelations = relations(companyDomain, ({ one }) => ({
-  company: one(company, {
-    fields: [companyDomain.tenantId],
-    references: [company.id],
-  }),
-}));
-
 export const companyRelations = relations(company, ({ many }) => ({
-  companyDomains: many(companyDomain),
-  threadRegistries: many(threadRegistry),
   companyMemberships: many(companyMembership),
-  storeRegistries: many(storeRegistry),
   socialAccountRegistries: many(socialAccountRegistry),
   aiUsages: many(aiUsage),
   billingSubscriptions: many(billingSubscription),
   billingTopUps: many(billingTopUp),
   billingCreditTransactions: many(billingCreditTransaction),
-}));
-
-export const threadRegistryRelations = relations(threadRegistry, ({ one }) => ({
-  company: one(company, {
-    fields: [threadRegistry.companyId],
-    references: [company.id],
-  }),
 }));
 
 export const ticketMessageDraftRelations = relations(
@@ -355,13 +335,6 @@ export const companyMembershipRelations = relations(
     }),
   }),
 );
-
-export const storeRegistryRelations = relations(storeRegistry, ({ one }) => ({
-  company: one(company, {
-    fields: [storeRegistry.companyId],
-    references: [company.id],
-  }),
-}));
 
 export const supportTicketAssignmentAuditRelations = relations(
   supportTicketAssignmentAudit,

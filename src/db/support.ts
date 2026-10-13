@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/tenant-context";
+import { getDb } from "@/lib/request-context";
 import { scopedThreadFilter } from "@/db/access";
 import { supportTicket } from "@/lib/drizzle/schema";
 import { desc } from "drizzle-orm";

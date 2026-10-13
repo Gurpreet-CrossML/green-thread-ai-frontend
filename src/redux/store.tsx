@@ -1,5 +1,4 @@
 import { configureStore } from "@reduxjs/toolkit";
-import AuthSlice from "@/redux/api-slice/auth-slice";
 import OnboardingSlice from "@/redux/api-slice/onboarding-slice";
 import StoresSlice from "@/redux/api-slice/stores-slice";
 import DashboardSlice from "@/redux/api-slice/dashboard-slice";
@@ -14,7 +13,6 @@ import OrderSlice from "@/redux/api-slice/order-slice";
 
 const store = configureStore({
   reducer: {
-    GetAuthReducer: AuthSlice,
     GetOnboardingReducer: OnboardingSlice,
     GetStoresReducer: StoresSlice,
     GetStoreSettingsReducer: StoreSettingsSlice,

@@ -1,5 +1,5 @@
 /**
- * Shared tenancy/identity types mirroring the Django login/verify payload
+ * Shared role/identity types mirroring the Django login/verify payload
  * (account/serializers.py, tenancy/services.user_context). Kept in one place so
  * the NextAuth session, the route wrapper, and the access resolver agree.
  */
@@ -31,9 +31,9 @@ export type Permission =
  */
 export type PermissionMap = Partial<Record<Permission, "read" | "write">>;
 
-/** The identity bundle the dashboard carries for tenant routing + access. */
+/** The identity bundle the dashboard carries for access checks. */
 export type Identity = {
-  /** Tenant schema (= company code); null for the platform superuser. */
+  /** The company's code; null for the platform superuser. */
   company_code: string | null;
   /** Company admin → may do everything. */
   is_staff: boolean;

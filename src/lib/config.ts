@@ -63,9 +63,6 @@ export const ENDPOINTS = {
 
   // Company & staff management (Django /api/tenancy/). These are Django-owned;
   // GET calls must pass `useBackend: true` (writes auto-route to Django).
-  // Public self-serve sign-up (Django) — creates the company and its first
-  // admin; the password is generated server-side and emailed.
-  registerCompany: () => "/tenancy/register/",
   fetchCompanyProfile: () => "/tenancy/company/",
   updateCompanyProfile: () => "/tenancy/company/",
   fetchStaff: () => "/tenancy/staff/",
@@ -88,7 +85,7 @@ export const ENDPOINTS = {
   // Shopify connect (Django, OAuth). Start returns the consent URL to send
   // the browser to; Shopify then redirects back to this app with
   // code/shop/state/hmac/timestamp, which the callback GET forwards verbatim
-  // (the HMAC covers every param) — no auth header, tenant comes from `state`.
+  // (the HMAC covers every param) — no auth header, the app keys come from `state`.
   shopifyOauthStart: () => "/store/shopify/oauth/start/",
   shopifyOauthCallback: () => "/store/shopify/oauth/callback/",
   // Company onboarding (Django, company admin). GET (needs useBackend) is the

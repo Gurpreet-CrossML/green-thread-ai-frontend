@@ -13,8 +13,7 @@
     "postinstall": "npm run fetch-rds-ca",
     "db:sync": "node --env-file-if-exists=.env --import tsx scripts/db-sync.ts",
     "db:check": "node --env-file-if-exists=.env --import tsx scripts/db-check.ts",
-    "db:inspect": "node --env-file-if-exists=.env --import tsx scripts/inspect-schemas.ts",
-    "db:smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke-tenant.ts"
+    "db:inspect": "node --env-file-if-exists=.env --import tsx scripts/inspect-schemas.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -3,26 +3,25 @@ import { describe, it, expect } from "vitest";
 import {
   buildAccess,
   resolveStoreScope,
-  resolveTenant,
+  resolveCompany,
   can,
   isWriteMethod,
-  isValidSchemaName,
   type RequestAccess,
 } from "@/lib/access-rules";
 
-// F5 — the heart of cross-tenant + per-store isolation, tested as pure logic.
+// The role and per-store access rules, tested as pure logic.
 
-describe("resolveTenant — a user is always bound to their own company_code", () => {
-  it("returns the user's company_code (there is no client-supplied selector)", () => {
-    expect(resolveTenant({ company_code: "crossml" })).toBe("crossml");
-    expect(resolveTenant({ is_staff: true, company_code: "myntra" })).toBe(
-      "myntra",
+describe("resolveCompany — the session's own company_code", () => {
+  it("returns the user's company_code", () => {
+    expect(resolveCompany({ company_code: "crossml" })).toBe("crossml");
+    expect(resolveCompany({ is_staff: true, company_code: "crossml" })).toBe(
+      "crossml",
     );
   });
 
   it("returns null for a user without a company_code (→ 403 at the route)", () => {
-    expect(resolveTenant({})).toBe(null);
-    expect(resolveTenant({ company_code: null })).toBe(null);
+    expect(resolveCompany({})).toBe(null);
+    expect(resolveCompany({ company_code: null })).toBe(null);
   });
 });
 
@@ -118,24 +117,5 @@ describe("isWriteMethod", () => {
     expect(isWriteMethod("head")).toBe(false);
     expect(isWriteMethod("POST")).toBe(true);
     expect(isWriteMethod("delete")).toBe(true);
-  });
-});
-
-describe("isValidSchemaName — SET LOCAL identifier safety", () => {
-  it("accepts valid Postgres schema identifiers", () => {
-    expect(isValidSchemaName("crossml")).toBe(true);
-    expect(isValidSchemaName("myntra")).toBe(true);
-    expect(isValidSchemaName("acme_retail2")).toBe(true);
-  });
-
-  it("rejects injection attempts and invalid identifiers", () => {
-    expect(isValidSchemaName('public"; DROP SCHEMA crossml CASCADE; --')).toBe(
-      false,
-    );
-    expect(isValidSchemaName("crossml, public")).toBe(false);
-    expect(isValidSchemaName("Crossml")).toBe(false); // uppercase
-    expect(isValidSchemaName("1abc")).toBe(false); // leading digit
-    expect(isValidSchemaName("a b")).toBe(false); // space
-    expect(isValidSchemaName("")).toBe(false);
   });
 });

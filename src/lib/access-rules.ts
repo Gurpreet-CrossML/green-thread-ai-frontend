@@ -3,20 +3,18 @@ import type {
   Permission,
   PermissionMap,
   StaffRole,
-} from "@/lib/tenant-types";
+} from "@/lib/access-types";
 
 /**
- * Pure tenancy / per-store access rules — the heart of cross-tenant and
- * per-store isolation, with NO dependency on the DB, AsyncLocalStorage, or
- * NextAuth. Kept dependency-free so the rules can be unit-tested directly
- * (see src/lib/__tests__/access-rules.test.ts) and reused by both the request
- * plumbing (with-tenant-route, tenant-context).
+ * Pure role / per-store access rules, with NO dependency on the DB,
+ * AsyncLocalStorage, or NextAuth. Kept dependency-free so the rules can be
+ * unit-tested directly (see src/lib/__tests__/access-rules.test.ts) and reused
+ * by the request plumbing (with-session-route, request-context).
  */
 
 /**
  * Store access for a request. `storeCodes` is the set of stores a user may
- * touch; it is `null` for a company admin (`is_staff`), who is unrestricted
- * within the active tenant. A staff role applies to every store, so for
+ * touch; it is `null` for a company admin (`is_staff`), who is unrestricted. A staff role applies to every store, so for
  * staff it is simply the company's store list.
  *
  * Note: platform superusers (`is_superuser`) cannot sign in to the dashboard —
@@ -36,16 +34,6 @@ export type SessionIdentity = {
   accessible_stores?: AccessibleStore[];
   permissions?: PermissionMap;
 };
-
-// A company code IS a Postgres schema identifier and goes straight into a raw
-// `SET LOCAL` (which can't be parameterized). It comes from a signed token, but
-// we validate regardless. Mirrors the backend's schema-name rule
-// (tenancy.models.build_company_code), allowing `_` defensively.
-export const SCHEMA_RE = /^[a-z][a-z0-9_]{0,62}$/;
-
-export function isValidSchemaName(code: string): boolean {
-  return SCHEMA_RE.test(code);
-}
 
 /**
  * May this user use `permission`? Mirrors Django's `tenancy.roles.has_permission`
@@ -73,7 +61,7 @@ export function isWriteMethod(method?: string): boolean {
 
 /**
  * Build the access context from the session identity. A company admin
- * (`is_staff`) is unrestricted within the active tenant (`storeCodes = null`);
+ * (`is_staff`) is unrestricted (`storeCodes = null`);
  * staff are limited to the `accessible_stores` list the backend sent.
  */
 export function buildAccess(identity: SessionIdentity): RequestAccess {
@@ -101,7 +89,7 @@ export function resolveStoreScope(
 ): string[] | null {
   const codes = access.storeCodes;
   if (codes === null) {
-    // Company admin: any store in the active tenant.
+    // Company admin: any store.
     return requested ? [requested] : null;
   }
   // Staff: only the listed stores. A requested code must be in the set.
@@ -110,11 +98,10 @@ export function resolveStoreScope(
 }
 
 /**
- * Resolve the tenant schema a request runs in. A user is ALWAYS bound to their
- * own `company_code` (from the signed token) — there is no client-supplied
- * selector, so a user can never reach another tenant. Returns null when there is
- * no company, which the route turns into a 403.
+ * The company a session belongs to, from the signed token. Returns null when
+ * there is no company (an account outside it), which the route turns into a
+ * 403.
  */
-export function resolveTenant(identity: SessionIdentity): string | null {
+export function resolveCompany(identity: SessionIdentity): string | null {
   return identity.company_code ?? null;
 }

@@ -9,7 +9,7 @@ import type {
   AccessibleStore,
   PermissionMap,
   StaffRole,
-} from "@/lib/tenant-types";
+} from "@/lib/access-types";
 
 declare module "next-auth" {
   interface User {
@@ -35,7 +35,7 @@ declare module "next-auth" {
       username?: string;
       name?: string | null;
       access_token?: string;
-      // Tenant routing + access (read by withTenantRoute and the UI gates).
+      // Company + access (read by withSessionRoute and the UI gates).
       company_code?: string | null;
       is_staff?: boolean;
       role?: StaffRole | null;
@@ -230,7 +230,7 @@ export const authOptions: AuthOptions = {
         token.name = user.name;
 
         // Tenancy/identity persisted from the Django login response, so every
-        // request can resolve its tenant + per-store access from the session.
+        // request can resolve its company + per-store access from the session.
         token.company_code = user.company_code ?? null;
         token.is_staff = user.is_staff ?? false;
         token.role = user.role ?? null;
@@ -255,7 +255,7 @@ export const authOptions: AuthOptions = {
         token = await refreshAccessToken(token);
       }
 
-      // Keep tenant/identity claims fresh — role, permissions and company
+      // Keep company/identity claims fresh — role, permissions and company
       // can change server-side after login. Cached (≤1 call/min/token) and
       // fails open to the existing claims on any error.
       const identity = await refreshIdentity(token.access_token, {

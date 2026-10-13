@@ -10,7 +10,7 @@ import { isPublicRoute, isSignedOutRoute } from "@/lib/auth-routes";
 // optimistic auth gate (is there a session at all?). The authoritative check
 // that the session is still valid server-side — i.e. the company-deactivation
 // cascade via Django verify-token — lives in the Node route layer
-// (src/lib/with-tenant-route.ts → src/lib/session-verify.ts), where a fetch is
+// (src/lib/with-session-route.ts → src/lib/session-verify.ts), where a fetch is
 // appropriate and its result can be cached.
 
 export async function proxy(req: NextRequest) {

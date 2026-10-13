@@ -1,18 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 
-// Django (django-tenants) owns the schema; drizzle-kit is introspect-only here.
-// `npm run db:sync` pulls `public` (shared) + one reference tenant schema, then
-// scripts/normalize-drizzle.ts rewrites the tenant tables to plain pgTable(...).
-// The reference schema is auto-resolved by the orchestrators (scripts/ref-schema.ts)
-// and passed in via DRIZZLE_REF_SCHEMA — never hard-coded, since it differs per
-// environment (local/dev/prod). Run drizzle-kit through `npm run db:sync`/`db:check`.
-const REF_SCHEMA = process.env.DRIZZLE_REF_SCHEMA;
-if (!REF_SCHEMA) {
-  throw new Error(
-    "DRIZZLE_REF_SCHEMA not set — run `npm run db:sync` or `npm run db:check`, " +
-      "which auto-resolve an existing tenant schema.",
-  );
-}
+// Django owns the schema; drizzle-kit is introspect-only here. Run it through
+// `npm run db:sync` / `npm run db:check`, which also run
+// scripts/normalize-drizzle.ts on the result.
 
 // The DB host serves a cert Node's trust store can't chain to a public root, so a
 // `sslmode=verify-full` URL makes drizzle-kit die with an empty error and exit 1.
@@ -29,16 +19,9 @@ export default defineConfig({
   dbCredentials: {
     url: DB_URL.toString(),
   },
-  // public = shared tables (auth + tenancy registries); the reference tenant =
-  // canonical per-tenant DDL replicated across every company schema.
-  schemaFilter: ["public", REF_SCHEMA],
-  // django_tenants gives every schema its own `django_migrations`, so it exists
-  // in both public and the tenant schema — a name collision drizzle-kit can't
-  // resolve cleanly. We never query it, so exclude it from introspection.
-  //
-  // `checkpoint*` is the same collision from another owner: LangGraph's
-  // checkpointer creates its tables in both schemas too. They are the
-  // chatbot's internals — never read here — and their `bytea` columns come
-  // out as `unknown(...)`, which does not compile.
+  schemaFilter: ["public"],
+  // `checkpoint*` are LangGraph's checkpointer tables — the chatbot's
+  // internals, never read here — and their `bytea` columns come out as
+  // `unknown(...)`, which does not compile.
   tablesFilter: ["!django_migrations", "!checkpoint*"],
 });

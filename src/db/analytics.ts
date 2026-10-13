@@ -1,9 +1,8 @@
 import {
   getDb,
   runSequentially,
-  currentCompany,
   resolveStoreScope,
-} from "@/lib/tenant-context";
+} from "@/lib/request-context";
 import { storeIdScope, threadIdScope } from "@/db/access";
 import { getCached, setCached } from "@/lib/dashboard-cache";
 import {
@@ -1645,7 +1644,7 @@ function parseLegacyDaterange(raw: string): { start: Date; end: Date } {
 // ===========================================================================
 // Consolidated dashboard summary  →  /analytics/dashboard
 // Runs the 5 summary serializers in ONE request/transaction instead of 5
-// separate API calls, behind a short TTL cache keyed by tenant + store + range.
+// separate API calls, behind a short TTL cache keyed by store + range.
 // Cuts the dashboard from ~6 requests (each its own tx + verify-token + many
 // queries) to 1, and to ~0 DB reads on cached repeat views.
 // ===========================================================================
@@ -1679,12 +1678,11 @@ export async function get_dashboard_summary(params: {
   const accessible = scope === null || scope.length > 0;
   if (!accessible) return EMPTY_DASHBOARD;
 
-  // Tenant-prefixed cache key — never crosses companies.
-  const key = `${currentCompany()}:${params.store_code ?? ""}:${params.from ?? ""}:${params.to ?? ""}`;
+  const key = `${params.store_code ?? ""}:${params.from ?? ""}:${params.to ?? ""}`;
   const cached = getCached<DashboardSummary>(key);
   if (cached) return cached;
 
-  // One connection, sequential (single tenant transaction — see tenant-context).
+  // One connection, sequential (single request transaction — see request-context).
   const result: DashboardSummary = {
     feedback_insights: await get_feedback_insights(params),
     engagements: await get_engagements(params),

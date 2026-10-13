@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 
 import { can, type SessionIdentity } from "@/lib/access-rules";
-import type { Permission } from "@/lib/tenant-types";
+import type { Permission } from "@/lib/access-types";
 import {
   NAV_AREAS,
   type AreaSection,

@@ -2,15 +2,15 @@ import { get_dashboard_summary } from "@/db/analytics";
 import { APIResponse } from "@/lib/config";
 import { createAPIResponse, handleApiError } from "@/lib/helpers";
 import type { NextApiRequest, NextApiResponse } from "next";
-import { withTenantRoute } from "@/lib/with-tenant-route";
+import { withSessionRoute } from "@/lib/with-session-route";
 
 /**
  * Consolidated dashboard endpoint — returns feedback_insights, engagements,
  * operational_efficiency, user_matrix and conversion_rate in one response, so
- * the dashboard makes a single request (one tenant transaction, one verify) and
+ * the dashboard makes a single request (one transaction, one verify) and
  * benefits from the shared short-TTL cache instead of 5 separate calls.
  */
-export default withTenantRoute(handler, "team_metrics");
+export default withSessionRoute(handler, "team_metrics");
 
 async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   if (req.method !== "GET") {

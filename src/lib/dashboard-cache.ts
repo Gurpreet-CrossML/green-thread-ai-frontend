@@ -2,12 +2,10 @@
  * Tiny in-memory TTL cache for the dashboard analytics payload.
  *
  * Dashboard analytics tolerate a few minutes of staleness, so caching the
- * combined result per (tenant, store, date-range) avoids re-running ~30 DB
+ * combined result per (store, date-range) avoids re-running ~30 DB
  * queries on every load / re-render / navigation — the main DB-cost driver.
  *
- * Tenant-safe: the key is always prefixed with the company schema, so one
- * company can never read another's cached data. Callers must also have already
- * passed the per-store access check before caching (denied requests are not
+ * Callers must have already passed the per-store access check before caching (denied requests are not
  * cached — see get_dashboard_summary), so an accessible user only ever reads a
  * store's canonical data.
  *

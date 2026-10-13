@@ -1,13 +1,12 @@
 import { and, eq, inArray, sql, type SQL, type Column } from "drizzle-orm";
 
-import { getDb, resolveStoreScope } from "@/lib/tenant-context";
+import { getDb, resolveStoreScope } from "@/lib/request-context";
 import { store, chatThread } from "@/lib/drizzle/schema";
 
 /**
  * Per-store access conditions for the dashboard data plane (F3).
  *
- * Company isolation is already enforced by the tenant `search_path` (F2); these
- * add the finer, intra-company restriction: a STAFF user only sees the stores
+ * These add the per-store restriction: a STAFF user only sees the stores
  * granted to them, while a company admin / platform superuser is unrestricted.
  *
  * Each helper returns a Drizzle `SQL` condition, or `null` when the caller is

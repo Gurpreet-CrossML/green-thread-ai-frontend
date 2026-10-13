@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 
 import { can } from "@/lib/access-rules";
-import type { Permission } from "@/lib/tenant-types";
+import type { Permission } from "@/lib/access-types";
 
 /**
  * May the signed-in user use `permission`? For hiding controls a role cannot
