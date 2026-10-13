@@ -6,7 +6,7 @@
  */
 
 /** Sign-in pages; a signed-in user is sent to the dashboard instead. */
-export const SIGNED_OUT_ROUTES = ["/login", "/forgot-password"];
+export const SIGNED_OUT_ROUTES = ["/login", "/signup", "/forgot-password"];
 
 /**
  * Open to everyone, signed in or not. A reset link must work even in a
