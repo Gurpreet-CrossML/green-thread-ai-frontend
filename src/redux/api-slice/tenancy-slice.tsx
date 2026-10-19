@@ -174,92 +174,6 @@ export const FetchStaff = createAsyncThunk(
   },
 );
 
-export const CreateStaff = createAsyncThunk(
-  "tenancy/CreateStaff",
-  async (
-    payload: {
-      first_name: string;
-      last_name: string;
-      email: string;
-      role: StaffRole;
-    },
-    thunkAPI,
-  ) => {
-    try {
-      const res = await axiosInstance.post(ENDPOINTS.createStaff(), payload);
-      const data = res.data.data as {
-        id: number;
-        email: string;
-        credentials_emailed: boolean;
-      };
-      toast.success("Staff user created.", {
-        description: data.credentials_emailed
-          ? `Login credentials were emailed to ${data.email}.`
-          : `User created, but the credentials email could not be sent.`,
-      });
-      return data;
-    } catch (error) {
-      toast.error("Uh oh! Something went wrong.", {
-        description: errorMessage(error, "Unable to create staff user."),
-      });
-      // The whole body, so the form can put field errors (e.g. a taken
-      // email) under the field that caused them.
-      const body = isAxiosError(error) ? error.response?.data : undefined;
-      return thunkAPI.rejectWithValue(body ?? errorMessage(error, "Failed"));
-    }
-  },
-);
-
-export const UpdateStaff = createAsyncThunk(
-  "tenancy/UpdateStaff",
-  async (
-    payload: { id: number; is_active?: boolean; role?: StaffRole },
-    thunkAPI,
-  ) => {
-    const { id, ...changes } = payload;
-    try {
-      const res = await axiosInstance.patch(ENDPOINTS.updateStaff(id), changes);
-      toast.success(
-        changes.role
-          ? "Role updated."
-          : changes.is_active
-            ? "Staff user activated."
-            : "Staff user deactivated.",
-      );
-      return res.data.data as StaffMember;
-    } catch (error) {
-      toast.error("Uh oh! Something went wrong.", {
-        description: errorMessage(error, "Unable to update staff user."),
-      });
-      return thunkAPI.rejectWithValue(errorMessage(error, "Failed"));
-    }
-  },
-);
-
-export const ResetStaffPassword = createAsyncThunk(
-  "tenancy/ResetStaffPassword",
-  async (payload: { id: number; email: string }, thunkAPI) => {
-    try {
-      const res = await axiosInstance.post(
-        ENDPOINTS.resetStaffPassword(payload.id),
-        {},
-      );
-      const data = res.data.data as { credentials_emailed: boolean };
-      toast.success("Password reset.", {
-        description: data.credentials_emailed
-          ? `New credentials were emailed to ${payload.email}.`
-          : "Password reset, but the credentials email could not be sent.",
-      });
-      return data;
-    } catch (error) {
-      toast.error("Uh oh! Something went wrong.", {
-        description: errorMessage(error, "Unable to reset password."),
-      });
-      return thunkAPI.rejectWithValue(errorMessage(error, "Failed"));
-    }
-  },
-);
-
 type TenancyState = {
   companyProfile: CompanyProfile | null;
   companyLoading: boolean;
@@ -284,7 +198,6 @@ type TenancyState = {
   };
   staff: StaffMember[];
   staffLoading: boolean;
-  staffSaving: boolean;
 };
 
 const initialState: TenancyState = {
@@ -311,7 +224,6 @@ const initialState: TenancyState = {
   },
   staff: [],
   staffLoading: false,
-  staffSaving: false,
 };
 
 const TenancySlice = createSlice({
@@ -399,19 +311,6 @@ const TenancySlice = createSlice({
       })
       .addCase(FetchStaff.rejected, (state) => {
         state.staffLoading = false;
-      })
-      .addCase(UpdateStaff.fulfilled, (state, action) => {
-        const idx = state.staff.findIndex((s) => s.id === action.payload.id);
-        if (idx !== -1) state.staff[idx] = action.payload;
-      })
-      .addCase(CreateStaff.pending, (state) => {
-        state.staffSaving = true;
-      })
-      .addCase(CreateStaff.fulfilled, (state) => {
-        state.staffSaving = false;
-      })
-      .addCase(CreateStaff.rejected, (state) => {
-        state.staffSaving = false;
       });
   },
 });

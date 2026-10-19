@@ -8,7 +8,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import type { SupportTicketTagData } from "@/redux/api-slice/support-ticket-slice";
+import type { ThreadTagData } from "@/redux/api-slice/thread-slice";
 
 /**
  * A tag's colour at a given opacity, as a CSS colour.
@@ -51,7 +51,7 @@ export function TagBadge({
   tag,
   onRemove,
 }: {
-  tag: SupportTicketTagData;
+  tag: ThreadTagData;
   onRemove?: () => void;
 }) {
   return (
@@ -92,7 +92,7 @@ export function HiddenTagsBadge({
   label,
   onRemoveTag,
 }: {
-  tags: SupportTicketTagData[];
+  tags: ThreadTagData[];
   label: string;
   onRemoveTag?: (tagId: number) => void;
 }) {

@@ -5,7 +5,6 @@ import {
   IconInfoCircle,
   IconLocationPin,
   IconNetwork,
-  IconUserPlus,
 } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
@@ -21,43 +20,6 @@ import {
 } from "@/components/ui/tooltip";
 import { Typography } from "@/components/ui/typography";
 import type { UserMetadata } from "@/redux/api-slice/thread-slice";
-
-/**
- * The one action that belongs beside a customer's name: open their record,
- * or attach one if this is a guest.
- *
- * An icon rather than a full-width button — it sat in the details pane as
- * "View in Catalog" taking a whole row, which is a lot of furniture for a
- * link, and put it a long way from the name it refers to.
- */
-export function CrmLinkButton({
-  customerId,
-  onLinkCustomer,
-}: {
-  customerId?: number | null;
-  /** Offered when there is no customer to open. */
-  onLinkCustomer?: () => void;
-}) {
-  // A linked customer needs no action here.
-  if (customerId) return null;
-  if (!onLinkCustomer) return null;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Link a Customer"
-          onClick={onLinkCustomer}
-        >
-          <IconUserPlus className="size-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Link a Customer</TooltipContent>
-    </Tooltip>
-  );
-}
 
 /** Icon and value, with the field name in a tooltip. */
 function Fact({
@@ -91,8 +53,7 @@ function Fact({
  * than down the details pane.
  *
  * It is context for the person you are already looking at, so it belongs
- * next to their name — and moving it up buys the pane back three rows for
- * orders and tickets, which is what an agent actually works from.
+ * next to their name.
  */
 export function SessionFacts({
   userMetadata,

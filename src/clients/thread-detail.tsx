@@ -24,13 +24,9 @@ import {
 import MessagePan from "@/components/custom/message-pan";
 import { CustomerAvatar } from "@/components/custom/customer-avatar";
 import { CustomerDetailsPanel } from "@/components/custom/customer-details-panel";
-import {
-  CrmLinkButton,
-  SessionFacts,
-} from "@/components/custom/customer-header";
+import { SessionFacts } from "@/components/custom/customer-header";
 import { TagsCell } from "@/components/custom/threads-columns";
 import { InfoIcon } from "@/components/custom/info-icon";
-import { LinkCustomerDialog } from "@/components/custom/link-customer-dialog";
 import { LoadingState } from "@/components/custom/loading-state";
 import {
   Empty,
@@ -58,12 +54,9 @@ import {
   FetchCart,
   FetchConversationSummary,
   FetchFeedbackSequence,
-  FetchFreshdeskTicketId,
-  FetchOrders,
   FetchTags,
   FetchThreadDetails,
   FetchUserMetadata,
-  ThreadCustomerLink,
   type ThreadMessage,
 } from "@/redux/api-slice/thread-slice";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
@@ -371,13 +364,6 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
     useAppSelector(
       (state) => state.GetThreadReducer.FetchFeedbackSequenceState,
     );
-  const { FetchFreshdeskTicketIdData, FetchFreshdeskTicketIdIsLoading } =
-    useAppSelector(
-      (state) => state.GetThreadReducer.FetchFreshdeskTicketIdState,
-    );
-  const { FetchOrderData, FetchOrderDataIsLoading } = useAppSelector(
-    (state) => state.GetThreadReducer.FetchOrderDataState,
-  );
   const threadTags = useAppSelector(
     (state) =>
       (
@@ -391,8 +377,6 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
   );
 
   const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
-  const [isLinkCustomerOpen, setIsLinkCustomerOpen] = useState(false);
-  const [isLinkingCustomer, setIsLinkingCustomer] = useState(false);
 
   useEffect(() => {
     if (!storeCode || !threadId) return;
@@ -406,46 +390,11 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
       dispatch(FetchCart(threadId));
       dispatch(FetchUserMetadata(threadId));
       dispatch(FetchFeedbackSequence(threadId));
-      dispatch(FetchOrders(threadId));
-      dispatch(
-        FetchFreshdeskTicketId({
-          threadId,
-          customerId: result.customer?.id,
-          storeCode,
-        }),
-      );
       dispatch(FetchTags(threadId));
     };
 
     loadData();
   }, [dispatch, storeCode, threadId]);
-
-  const handleLinkCustomer = async (customerId: number) => {
-    if (!storeCode || !threadId) return;
-    setIsLinkingCustomer(true);
-    try {
-      const result = await dispatch(
-        ThreadCustomerLink({ storeCode, threadId, customerId }),
-      );
-      if (ThreadCustomerLink.fulfilled.match(result)) {
-        setIsLinkCustomerOpen(false);
-        // Identity, order history and tickets all change with the link, so
-        // refetch rather than patching a guess into three places.
-        const detail = await dispatch(FetchThreadDetails(threadId)).unwrap();
-        setThreadMessages(detail.messages ?? []);
-        dispatch(FetchOrders(threadId));
-        dispatch(
-          FetchFreshdeskTicketId({
-            threadId,
-            customerId: detail.customer?.id,
-            storeCode,
-          }),
-        );
-      }
-    } finally {
-      setIsLinkingCustomer(false);
-    }
-  };
 
   // Only this thread's data counts as loaded. The store keeps the previous
   // response while a new one is in flight — right for a refetch, wrong on
@@ -490,13 +439,13 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
   }
 
   return (
-    // The same shell as Live Support and Help Desk: the thread on one
+    // The same shell as Live Support: the thread on one
     // side, who it is with on the other. It used to be one long column, so
     // reading a conversation meant scrolling past the customer and then
-    // back down for their cart and tickets.
+    // back down for their cart.
     <div className="flex h-svh min-h-0 flex-col overflow-hidden border-y">
       {/* Who the agent is talking to comes first — the same header Live
-          Support and Help Desk lead with, so a customer reads identically
+          Support leads with, so a customer reads identically
           whichever screen you reach them from. The thread's own subject
           titles the Conversation card below, where it names the thing it
           is the subject of. */}
@@ -521,17 +470,9 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
                   {customerName}
                 </CardTitle>
               )}
-              <CrmLinkButton
-                customerId={details?.customer?.id}
-                onLinkCustomer={
-                  details?.customer?.id
-                    ? undefined
-                    : () => setIsLinkCustomerOpen(true)
-                }
-              />
             </div>
             {/* Nothing rather than "no email on file" for a guest — the
-                avatar and the link action already say which this is. */}
+                avatar already says which this is. */}
             {details?.customer_email ? (
               <Typography variant="muted" className="truncate">
                 {details.customer_email}
@@ -712,36 +653,12 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
         </div>
 
         <CustomerDetailsPanel
-          // The detail response carries the customer's id and their name
-          // and email as separate fields; the panel wants them together.
-          customerData={{
-            id: details?.customer?.id ?? null,
-            name: customerName,
-            email: details?.customer_email ?? "",
-          }}
-          orders={FetchOrderData}
-          ordersLoading={detailsLoading || FetchOrderDataIsLoading}
-          onOrdersSync={() => dispatch(FetchOrders(threadId))}
-          tickets={{
-            data: FetchFreshdeskTicketIdData ?? [],
-            loading: detailsLoading || FetchFreshdeskTicketIdIsLoading,
-          }}
           cart={{
             data: FetchCartData,
             loading: detailsLoading || FetchCartDataIsLoading,
           }}
         />
       </div>
-
-      {storeCode ? (
-        <LinkCustomerDialog
-          open={isLinkCustomerOpen}
-          onOpenChange={setIsLinkCustomerOpen}
-          storeCode={storeCode}
-          linking={isLinkingCustomer}
-          onLink={(customer) => handleLinkCustomer(customer.id)}
-        />
-      ) : null}
     </div>
   );
 }

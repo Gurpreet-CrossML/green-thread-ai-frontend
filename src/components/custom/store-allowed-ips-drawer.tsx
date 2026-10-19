@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import { IconDeviceFloppy } from "@tabler/icons-react";
-
-import { STORE_PLATFORMS } from "@/lib/config";
 
 import { ChipList } from "@/components/custom/chip-list";
 import { LoadingState } from "@/components/custom/loading-state";
@@ -71,7 +68,6 @@ export function StoreAllowedIpsDrawer({
   const [allowedIps, setAllowedIps] = useState<string[]>([]);
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
 
-  const platform = STORE_PLATFORMS.find((p) => p.value === store?.platform);
   const storeCode = store?.code ?? "";
   useEffect(() => {
     if (storeCode) dispatch(FetchStoreAllowedIpsSettings(storeCode));
@@ -144,15 +140,6 @@ export function StoreAllowedIpsDrawer({
               what is being edited. */}
           <div className="flex flex-col gap-3 p-4 text-left">
             <div className="flex items-center gap-2">
-              {platform && (
-                <Image
-                  src={platform.icon}
-                  alt=""
-                  width={20}
-                  height={20}
-                  className="size-5 object-contain"
-                />
-              )}
               <Typography variant="small">{store?.name}</Typography>
               <Typography variant="muted" className="font-mono text-xs">
                 {store?.code}

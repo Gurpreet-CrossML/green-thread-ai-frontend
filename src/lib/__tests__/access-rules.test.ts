@@ -79,16 +79,18 @@ describe("resolveStoreScope — store_code is validated, never trusted", () => {
 describe("can — role permissions from Django", () => {
   const viewer = {
     is_staff: false,
-    permissions: { conversations: "read", knowledge: "read" } as const,
+    permissions: { conversations: "read", team_metrics: "read" } as const,
   };
   const agent = {
     is_staff: false,
-    permissions: { conversations: "write", copilot: "write" } as const,
+    permissions: { conversations: "write", reassignment: "write" } as const,
   };
 
   it("company admin may do everything, including admin-only screens", () => {
     expect(can({ is_staff: true }, undefined, { write: true })).toBe(true);
-    expect(can({ is_staff: true }, "knowledge", { write: true })).toBe(true);
+    expect(can({ is_staff: true }, "team_metrics", { write: true })).toBe(
+      true,
+    );
   });
 
   it("staff never reach admin-only (undefined) permissions", () => {
@@ -101,8 +103,8 @@ describe("can — role permissions from Django", () => {
   });
 
   it("a permission the role lacks is denied", () => {
-    expect(can(agent, "knowledge")).toBe(false);
-    expect(can(viewer, "copilot")).toBe(false);
+    expect(can(agent, "team_metrics")).toBe(false);
+    expect(can(viewer, "reassignment")).toBe(false);
   });
 
   it("no session → denied", () => {

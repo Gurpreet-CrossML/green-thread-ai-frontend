@@ -1,10 +1,3 @@
-import {
-  Icon,
-  IconBrandFacebook,
-  IconBrandInstagram,
-  IconBrandWhatsapp,
-} from "@tabler/icons-react";
-
 const DJANGO_BASE_URL =
   process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:8000";
 const LOCAL_BASE_URL = process.env.NEXT_PUBLIC_FRONTEND_URL || "";
@@ -63,16 +56,9 @@ export const ENDPOINTS = {
 
   // Company & staff management (Django /api/tenancy/). These are Django-owned;
   // GET calls must pass `useBackend: true` (writes auto-route to Django).
-  // Public sign-up (Django) — creates the company and its first admin; the
-  // password is generated server-side and emailed. Refused once a company
-  // exists.
-  registerCompany: () => "/tenancy/register/",
   fetchCompanyProfile: () => "/tenancy/company/",
   updateCompanyProfile: () => "/tenancy/company/",
   fetchStaff: () => "/tenancy/staff/",
-  createStaff: () => "/tenancy/staff/",
-  updateStaff: (id: number) => `/tenancy/staff/${id}/`,
-  resetStaffPassword: (id: number) => `/tenancy/staff/${id}/reset-password/`,
 
   // Store Management
   fetchStoresList: () => "/store/list",
@@ -80,22 +66,8 @@ export const ENDPOINTS = {
   // Settings → Stores screen (GET needs useBackend). The local route above
   // is the ported read the store switcher uses.
   fetchStoresDirectory: () => "/store/list/",
-  // The store's widget key, for showing its embed script after onboarding.
+  // The store's widget key, for showing its embed script.
   storeWidgetInit: () => "/store/widget-init/",
-  // Detail route for one store; PATCH { is_active: false } deactivates it.
-  // NOTE: endpoint is still being finalised by the backend dev; adjust the
-  // path here once it's confirmed.
-  storeDetail: (code: string) => `/store/${code}/`,
-  // Shopify connect (Django, OAuth). Start returns the consent URL to send
-  // the browser to; Shopify then redirects back to this app with
-  // code/shop/state/hmac/timestamp, which the callback GET forwards verbatim
-  // (the HMAC covers every param) — no auth header, the app keys come from `state`.
-  shopifyOauthStart: () => "/store/shopify/oauth/start/",
-  shopifyOauthCallback: () => "/store/shopify/oauth/callback/",
-  // Company onboarding (Django, company admin). GET (needs useBackend) is the
-  // step + connected stores with their widget keys; PATCH sets
-  // `onboarding_step` to "completed" or "skipped".
-  companyOnboarding: () => "/tenancy/company/onboarding/",
   // Per-store settings (Django) — currently the widget's allowed-IP list.
   // GET returns the settings, PATCH updates them.
   storeAllowedIPsSettings: () =>
@@ -103,22 +75,8 @@ export const ENDPOINTS = {
 
   // Dashboard Analytics. Local GET routes (Next) — NO trailing slash, otherwise
   // Next.js issues a 308 redirect (an extra round-trip) before each call.
-  // fetchDashboard consolidates the 5 summary calls into one request.
   fetchDashboard: () => "/analytics/dashboard",
-  fetchFeedbackInsights: () => "/analytics/feedback-insights",
-  fetchConversationData: () => "/analytics/conversion",
-  fetchEngagementData: () => "/analytics/engagements",
-  fetchOperationalEfficiencyData: () => "/analytics/operational-efficiency",
-  fetchUserMatrix: () => "/analytics/user-matrix",
-  fetchConversaionRateData: () => "/analytics/conversion-rate",
-  fetchQueryCategoryInsights: () => "/analytics/query-category-insights",
   fetchConversationHistory: () => "/analytics/chat-history",
-  // AI Usage analytics (Django; GET requests require useBackend: true).
-  fetchAIUsageSummary: () => "/chat/ai-usage/summary/",
-  fetchAIUsageDaily: () => "/chat/ai-usage/daily/",
-  fetchAIUsageTokenSplit: () => "/chat/ai-usage/token-split/",
-  fetchAIUsageWorkflowCosts: () => "/chat/ai-usage/workflow-costs/",
-  fetchAIUsageLatencyTrend: () => "/chat/ai-usage/latency-trend/",
 
   // Geography (Django Cities Light). Countries is intentionally limited to
   // India by the backend; states and cities are dependent lists.
@@ -142,119 +100,10 @@ export const ENDPOINTS = {
     `/analytics/threads/${threadId}/ai-insights`,
   fetchCartData: (threadId: string) =>
     `/analytics/threads/${threadId}/cart-data`,
-  // Support tickets (Django). Same payload from both, so the caller only
-  // picks the URL: customer-scoped for a logged-in customer (spans all
-  // their conversations), thread-scoped for a guest.
-  fetchCustomerTickets: (customerId: number) =>
-    createAPIUrl(`/support/customers/${customerId}/tickets/`, "django"),
-  fetchThreadTickets: (threadId: string) =>
-    createAPIUrl(`/support/threads/${threadId}/tickets/`, "django"),
-  fetchOrderData: (threadId: string) =>
-    `/analytics/threads/${threadId}/order-data`,
 
   // Chatbot Customization (Django via useBackend — keep trailing slash).
   widgetCustomization: (storeId: number) =>
     `/store/widget-customization/${storeId}/`,
-
-  // Catalog. Store-scoped directories of shoppers and their orders. Both lists
-  // take search, filter and ordering query params — see CustomerFilters and
-  // OrderFilters in their slices for the full set.
-  //
-  // NOTE: the backend confirmed the two list routes. The detail routes are
-  // the DRF convention on top of them and are still to be verified.
-  fetchCustomers: () => createAPIUrl("/chat/customers/", "django"),
-  fetchCustomerDetails: (customerId: number) =>
-    createAPIUrl(`/chat/customers/${customerId}/`, "django"),
-  // POST — create a shopper from just an email, so a guest ticket can be
-  // attached to a real record and filled in later from Catalog.
-  // NOTE: pending confirmation from the backend team.
-  createCustomer: () => createAPIUrl("/chat/customers/", "django"),
-  fetchOrders: () => createAPIUrl("/chat/orders/", "django"),
-  // One customer's stored orders. Read-only — it never calls the commerce
-  // platform, so it is the cheap one to reach for.
-  fetchCustomerOrders: (customerId: number) =>
-    createAPIUrl(`/chat/customers/${customerId}/orders/`, "django"),
-  // GET, not POST: refreshing a customer's history from Shopify or Magento
-  // and handing it back. The single sync route — the thread-scoped and
-  // ticket-scoped ones it replaced both went through the customer anyway.
-  syncCustomerOrders: (customerId: number) =>
-    createAPIUrl(`/chat/customers/${customerId}/orders/sync/`, "django"),
-  fetchOrderDetails: (orderId: number) =>
-    createAPIUrl(`/chat/orders/${orderId}/`, "django"),
-
-  // Helpdesk(Support) apis
-  fetchSupportTickets: () => createAPIUrl("/support/tickets", "django"),
-  // POST — raise a ticket with no conversation behind it: an agent logging
-  // a problem that reached them by phone, email or in person.
-  createSupportTicket: () => createAPIUrl("/support/tickets/", "django"),
-  // POST — raise a ticket from a live-chat conversation. The counterpart
-  // of metaCreateSupportTicket: same fields, same payload, addressed by
-  // the thread behind it rather than a social contact.
-  createThreadSupportTicket: (threadId: string) =>
-    createAPIUrl(
-      `/support/threads/${threadId}/create-support-ticket/`,
-      "django",
-    ),
-  // GET — an AI reading of the conversation, as a ticket an agent can edit.
-  // Slow (it calls the model), so it is asked for on demand rather than on
-  // opening the form.
-  threadSupportTicketDraft: (threadId: string) =>
-    createAPIUrl(
-      `/support/threads/${threadId}/support-ticket/draft/`,
-      "django",
-    ),
-  fetchSupportTicketDeatils: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/`, "django"),
-  supportTicketMessageSend: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/messages/`, "django"),
-  fetchSupportTicketTags: () => createAPIUrl("/support/ticket-tags", "django"),
-  // PATCH — attach an existing customer to a ticket raised by a guest.
-  // NOTE: pending confirmation from the backend team.
-  supportTicketCustomerLink: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/customer/`, "django"),
-  // PATCH — the same for a live chat thread a guest started. A separate
-  // route because a thread is not a ticket; the two are different objects
-  // with different owners.
-  // NOTE: pending confirmation from the backend team.
-  threadCustomerLink: (threadId: string) =>
-    createAPIUrl(`/chat/threads/${threadId}/customer/`, "django"),
-  supportTicketStaffAssign: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/assignee/`, "django"),
-  supportTicketAgentDraftSave: (ticket_id: number) =>
-    createAPIUrl(
-      `/support/tickets/${ticket_id}/draft-messages/agent/`,
-      "django",
-    ),
-  supportTicketTagAssign: (ticket_id: number, tag_id: number) =>
-    createAPIUrl(
-      `/support/tickets/${ticket_id}/tags/${tag_id}/assign/`,
-      "django",
-    ),
-  supportTicketTagRemove: (ticket_id: number, tag_id: number) =>
-    createAPIUrl(
-      `/support/tickets/${ticket_id}/tags/${tag_id}/remove/`,
-      "django",
-    ),
-  supportMessageImprove: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/message/improve/`, "django"),
-  supportTicketSnooze: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/snooze/`, "django"),
-  supportTicketMarkRead: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/mark/read/`, "django"),
-  ticketTagCreate: () => createAPIUrl("/support/ticket-tags/", "django"),
-  ticketTagUpdate: (tag_id: number) =>
-    createAPIUrl(`/support/ticket-tags/${tag_id}/`, "django"),
-  ticketTagDelete: (tag_id: number) =>
-    createAPIUrl(`/support/ticket-tags/${tag_id}/delete/`, "django"),
-  supportTicketAIMessageDraftGenerate: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/draft-messages/ai/`, "django"),
-  supportTicketStatusUpdate: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/status/`, "django"),
-  supportTicketPriorityUpdate: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/priority/`, "django"),
-  supportTicketMessagesTranslate: (ticket_id: number) =>
-    createAPIUrl(`/support/tickets/${ticket_id}/messages/translate/`, "django"),
-
 };
 
 // Default page size, mirroring DRF's PageNumberPagination.page_size.
@@ -297,240 +146,4 @@ export type APIResponse = {
   success: boolean;
   message?: string;
   data?: object | object[] | PaginationResponse | ErrorResponse | null;
-};
-
-export const SELF_REFERENCE_OPTIONS = [
-  {
-    value: "i",
-    label: '"I"',
-    description: "I can help with that",
-  },
-  {
-    value: "we",
-    label: '"We"',
-    description: "We can help with that",
-  },
-] as const;
-
-export type ToneSliderDef = {
-  key: "warmth" | "formality" | "energy" | "playfulness" | "directness";
-  label: string;
-  minLabel: string;
-  maxLabel: string;
-  info: string;
-};
-
-export const TONE_SLIDERS: ToneSliderDef[] = [
-  {
-    key: "warmth",
-    label: "Warmth",
-    minLabel: "Reserved",
-    maxLabel: "Warm",
-    info: "How emotionally friendly replies feel. Low keeps it businesslike and neutral; high adds empathy and personal touches.",
-  },
-  {
-    key: "formality",
-    label: "Formality",
-    minLabel: "Casual",
-    maxLabel: "Formal",
-    info: "The register of the language. Low sounds like a friend texting; high reads like professional correspondence.",
-  },
-  {
-    key: "energy",
-    label: "Energy",
-    minLabel: "Calm",
-    maxLabel: "Energetic",
-    info: "How lively the writing is. Low is calm and measured; high is upbeat with more enthusiasm and momentum.",
-  },
-  {
-    key: "playfulness",
-    label: "Playfulness",
-    minLabel: "Serious",
-    maxLabel: "Playful",
-    info: "Room for humor and lightness. Low stays strictly on-task; high allows jokes and playful asides.",
-  },
-  {
-    key: "directness",
-    label: "Directness",
-    minLabel: "Gentle",
-    maxLabel: "Direct",
-    info: "How quickly the assistant gets to the point. Low cushions messages softly; high answers first and skips the padding.",
-  },
-];
-
-export type SelectOption = { value: string; label: string };
-
-/** Option with a one-line explanation of what picking it changes. */
-export type DescribedOption = SelectOption & { description: string };
-
-export const ANSWER_LENGTH_CHOICES: readonly DescribedOption[] = [
-  {
-    value: "concise",
-    label: "Concise",
-    description: "One or two sentences.",
-  },
-  {
-    value: "standard",
-    label: "Standard",
-    description: "Balanced, key details.",
-  },
-  {
-    value: "thorough",
-    label: "Thorough",
-    description: "Full, detailed explanations.",
-  },
-];
-
-export const EMOJI_POLICY_CHOICES: readonly DescribedOption[] = [
-  { value: "none", label: "None", description: "Avoids emojis." },
-  {
-    value: "sparing",
-    label: "Sparing",
-    description: "Rare, only when fitting.",
-  },
-  {
-    value: "moderate",
-    label: "Moderate",
-    description: "Occasional, adds warmth.",
-  },
-  {
-    value: "liberal",
-    label: "Liberal",
-    description: "In most replies.",
-  },
-  {
-    value: "free",
-    label: "Free",
-    description: "Whenever natural.",
-  },
-];
-
-export const EXCLAMATION_POLICY_CHOICES: readonly DescribedOption[] = [
-  {
-    value: "none",
-    label: "None",
-    description: "Avoids exclamation marks.",
-  },
-  {
-    value: "sparing",
-    label: "Sparing",
-    description: "Big moments only.",
-  },
-  {
-    value: "moderate",
-    label: "Moderate",
-    description: "Occasional friendly emphasis.",
-  },
-  {
-    value: "liberal",
-    label: "Liberal",
-    description: "Frequent excitement!",
-  },
-  {
-    value: "free",
-    label: "Free",
-    description: "Unrestricted!",
-  },
-];
-
-export const REGIONAL_SPELLING_CHOICES: readonly DescribedOption[] = [
-  {
-    value: "uk",
-    label: "UK",
-    description: "“Colour”, “organise”.",
-  },
-  {
-    value: "us",
-    label: "US",
-    description: "“Color”, “organize”.",
-  },
-  {
-    value: "auto",
-    label: "Auto",
-    description: "Matches each customer.",
-  },
-];
-
-// Mirrors `onboarding_step` on the session user (Django user_context), in
-// the order the user walks through them.
-export const ONBOARDING_STEPS = [
-  { value: "store_setup", label: "Connect the store" },
-  { value: "go_live", label: "Go live on store" },
-] as const;
-
-export type OnboardingStep = (typeof ONBOARDING_STEPS)[number]["value"];
-
-// The stages the connect-progress dialog walks through while the backend
-// finishes a Shopify OAuth callback. Cosmetic pacing — the backend does it
-// in one request — so the last entry is only shown once it responds.
-// Where the widget embed code goes, per platform, shown as numbered steps
-// beside the snippet.
-export const WIDGET_INSTALL_STEPS = {
-  shopify: [
-    "In your Shopify admin, open Online Store → Themes.",
-    "On your live theme, choose Edit code.",
-    "Open layout/theme.liquid.",
-    "Paste the snippet at the very end of the file, just before </body>, and save.",
-  ],
-  default: [
-    "Open the storefront's theme or template editor.",
-    "Paste the snippet before </body> on every page, and publish.",
-  ],
-} as const;
-
-export const SHOPIFY_CONNECT_STEPS = [
-  "Checking permissions",
-  "Fetching connected store details",
-  "Subscribing to store updates",
-  "Setting things up",
-  "Done",
-] as const;
-
-export const STORE_PLATFORMS = [
-  {
-    value: "shopify",
-    label: "Shopify",
-    icon: "/shopify.svg",
-    description:
-      "Connect with your store alias. We'll send you to Shopify to authorize access.",
-  },
-  {
-    value: "magento",
-    label: "Magento",
-    icon: "/magento-2.svg",
-    description:
-      "Connect with your store URL. We'll send you to Magento to authorize access.",
-  },
-] as const;
-
-export type StorePlatform = (typeof STORE_PLATFORMS)[number]["value"];
-
-export const SocialAIPlatformOptions: {
-  readonly [key: string]: { label: string; icon: Icon; color: string };
-} = {
-  facebook: {
-    label: "Facebook",
-    icon: IconBrandFacebook,
-    color: "text-[#1877F2]",
-  },
-  instagram: {
-    label: "Instagram",
-    icon: IconBrandInstagram,
-    color: "text-[#E4405F]",
-  },
-  whatsapp: {
-    label: "WhatsApp",
-    icon: IconBrandWhatsapp,
-    color: "text-[#25D366]",
-  },
-};
-
-export const StatusBadges: {
-  readonly [key: string]: { label: string; bg: string; text: string };
-} = {
-  active: {
-    label: "Active",
-    bg: "bg-green-100",
-    text: "text-green-800",
-  },
 };

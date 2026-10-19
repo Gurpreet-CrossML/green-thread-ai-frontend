@@ -63,7 +63,6 @@ export type StoreListItem = {
   allowed_ips_count: number;
   created_at: string;
   updated_at: string;
-  platform?: string;
   is_active?: boolean;
 };
 
@@ -118,28 +117,6 @@ export const FetchWidgetScript = createAsyncThunk(
   },
 );
 
-export const DeactivateStore = createAsyncThunk(
-  "DeactivateStore",
-  async ({ code, name }: { code: string; name: string }, thunkAPI) => {
-    try {
-      await axiosInstance.patch(ENDPOINTS.storeDetail(code), {
-        is_active: false,
-      });
-      toast.success("Store deactivated", {
-        description: `StoreSignal has stopped working on ${name}.`,
-      });
-      return { code };
-    } catch (error) {
-      const response = isAxiosError(error) ? error.response : undefined;
-      const data = response?.data;
-      toast.error("Couldn't deactivate the store", {
-        description: data?.message || "Try again in a moment.",
-      });
-      return thunkAPI.rejectWithValue(data || "Something went wrong");
-    }
-  },
-);
-
 const StoresSlice = createSlice({
   name: "Stores",
   initialState: {
@@ -160,11 +137,6 @@ const StoresSlice = createSlice({
       FetchWidgetScriptIsSuccess: false,
       FetchWidgetScriptIsError: null as null | string | object,
       FetchWidgetScriptData: null as { widget_key: string } | null,
-    },
-    DeactivateStoreState: {
-      DeactivateStoreIsLoading: false,
-      DeactivateStoreIsSuccess: false,
-      DeactivateStoreIsError: null as null | string | object,
     },
     // Single source of truth for the currently selected store code.
     // Kept empty on the server so SSR and the first client render match;
@@ -229,21 +201,6 @@ const StoresSlice = createSlice({
         state.FetchWidgetScriptState.FetchWidgetScriptIsLoading = false;
         state.FetchWidgetScriptState.FetchWidgetScriptIsError =
           action.payload as string | object;
-      })
-      .addCase(DeactivateStore.pending, (state) => {
-        state.DeactivateStoreState.DeactivateStoreIsLoading = true;
-        state.DeactivateStoreState.DeactivateStoreIsSuccess = false;
-        state.DeactivateStoreState.DeactivateStoreIsError = null;
-      })
-      .addCase(DeactivateStore.fulfilled, (state) => {
-        state.DeactivateStoreState.DeactivateStoreIsLoading = false;
-        state.DeactivateStoreState.DeactivateStoreIsSuccess = true;
-      })
-      .addCase(DeactivateStore.rejected, (state, action) => {
-        state.DeactivateStoreState.DeactivateStoreIsLoading = false;
-        state.DeactivateStoreState.DeactivateStoreIsError = action.payload as
-          | string
-          | object;
       });
   },
 });

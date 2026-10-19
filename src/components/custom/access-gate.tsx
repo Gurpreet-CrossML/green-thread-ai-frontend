@@ -38,13 +38,8 @@ export function AccessGate({
   const { data: session, status } = useSession();
   const user = session?.user;
   const allowed = status === "authenticated" && can(user, permission);
-  // While onboarding is pending the proxy pins everyone to "/", so leaving
-  // would bounce straight back.
   const target =
-    redirect &&
-    status === "authenticated" &&
-    !allowed &&
-    !user?.onboarding_pending
+    redirect && status === "authenticated" && !allowed
       ? firstVisibleNavUrl(user)
       : null;
 

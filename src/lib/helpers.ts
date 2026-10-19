@@ -20,31 +20,6 @@ export const formatDateTime = (dateInput: string | null) => {
   });
 };
 
-// Short relative time e.g. "3m", "2h", "5d", "3w", "2mo" — used by chat/thread
-// lists where absolute timestamps would be too wide to fit.
-export const formatRelativeTime = (value: string | null | undefined) => {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  const diffMs = Date.now() - date.getTime();
-  const diffMinutes = Math.max(1, Math.floor(diffMs / 60000));
-
-  if (diffMinutes < 60) return `${diffMinutes}m`;
-
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h`;
-
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d`;
-
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks < 4) return `${diffWeeks}w`;
-
-  return `${Math.max(1, Math.floor(diffDays / 30))}mo`;
-};
-
 export const getDuration = (start: string | null, end: string | null) => {
   if (!start || !end || start === "-" || end === "-") return "-";
   const diff = new Date(end).getTime() - new Date(start).getTime();
@@ -168,67 +143,11 @@ export function formatRelativeDateTime(
 }
 
 /**
- * Converts a string to title case by capitalizing the first letter of
- * each word. Also converts snake_case and kebab-case to spaced words.
- *
- * @param value The string to format.
- * @returns The formatted string.
- *
- * @example
- * capitalizeText("active");
- * // "Active"
- *
- * @example
- * capitalizeText("payment_failed");
- * // "Payment Failed"
- *
- * @example
- * capitalizeText("exchange-request");
- * // "Exchange Request"
- */
-export function capitalizeText(value: string): string {
-  if (!value) return "";
-
-  return value
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-/**
- * Format an amount with its currency, e.g. "3850.00" → "$3,850.00".
- *
- * Amounts arrive as strings from DRF (DecimalField) and as numbers from the
- * platform payloads, so both are accepted.
- */
-export function formatPrice(
-  value: string | number | null | undefined,
-  currency = "USD",
-): string {
-  if (value === null || value === undefined || value === "") return "—";
-  const amount = typeof value === "number" ? value : Number(value);
-  if (Number.isNaN(amount)) return String(value);
-
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-      // Without this, some locales render USD as "US$" instead of "$" to
-      // disambiguate from their own local currency — narrowSymbol forces
-      // the plain symbol regardless of locale.
-      currencyDisplay: "narrowSymbol",
-    }).format(amount);
-  } catch {
-    // Unrecognized currency code — fall back to plain formatting.
-    return `${value} ${currency}`;
-  }
-}
-
-/**
  * Date without a time, e.g. "8 Aug 2026".
  *
  * Normalizes before parsing: Date.parse needs the "T" separator instead of
  * a space, and rejects bare-hour offsets like "+00" unless minutes are
- * appended ("+00:00") — both shapes arrive from the commerce platforms.
+ * appended ("+00:00").
  */
 export function formatDate(value: string): string {
   // Normalize before parsing: Date.parse needs the "T" separator instead of
@@ -244,24 +163,6 @@ export function formatDate(value: string): string {
     month: "short",
     day: "numeric",
   });
-}
-
-/** Midnight at the start of `value`'s day, as an ISO instant. */
-export function startOfDay(value: string) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date.toISOString();
-}
-
-/**
- * The last instant of `value`'s day, so a date range's end day is included.
- * Without it, "up to today" stops at midnight and hides everything that
- * happened today.
- */
-export function endOfDay(value: string) {
-  const date = new Date(value);
-  date.setHours(23, 59, 59, 999);
-  return date.toISOString();
 }
 
 /**
@@ -307,34 +208,9 @@ export function toPaginatedList<T>(payload: unknown): {
   };
 }
 
-// Tells the widget who is browsing: Shopify's Liquid exposes the logged-in
-// customer, and the widget reads window.currentCustomer / window.isLoggedIn.
-const SHOPIFY_CUSTOMER_BLOCK = `{% if customer %}
-  <script>
-    window.currentCustomer = {
-      id: "{{ customer.id }}",
-      email: "{{ customer.email }}",
-      firstName: "{{ customer.first_name }}",
-      lastName: "{{ customer.last_name }}",
-      fullName: "{{ customer.name }}",
-    };
-    window.isLoggedIn = true;
-  </script>
-{% else %}
-  <script>
-    window.currentCustomer = null;
-    window.isLoggedIn = false;
-  </script>
-{% endif %}`;
-
-/**
- * The embed code a merchant pastes before </body>, for one store's widget
- * key. On Shopify it is Liquid — the customer block above plus the script
- * tag, destined for the end of layout/theme.liquid; on any other platform
- * it is the bare script tag.
- */
-export function widgetSnippet(widgetKey: string, platform?: string): string {
-  const tag = [
+/** The embed code a merchant pastes before </body>, for one store's widget key. */
+export function widgetSnippet(widgetKey: string): string {
+  return [
     "<script",
     `  src="${WIDGET_SCRIPT_SRC}"`,
     `  data-widget-key="${widgetKey}"`,
@@ -342,24 +218,4 @@ export function widgetSnippet(widgetKey: string, platform?: string): string {
     "  data-chatbot-init",
     "></script>",
   ].join("\n");
-  return platform === "shopify" ? `${SHOPIFY_CUSTOMER_BLOCK}\n${tag}` : tag;
-}
-
-/**
- * Add a value to a list, or drop it if it is already there.
- *
- * The shape every multi-select on a settings screen needs — a checklist of
- * fixed options where ticking and unticking are the same gesture. Returns a
- * new array; the one passed in is never mutated.
- */
-export function toggleInList<T>(list: T[], value: T): T[] {
-  return list.includes(value)
-    ? list.filter((item) => item !== value)
-    : [...list, value];
-}
-
-export function getApiErrorMessage(
-  data: { non_field_errors?: string } | null | undefined,
-) {
-  return data?.non_field_errors;
 }

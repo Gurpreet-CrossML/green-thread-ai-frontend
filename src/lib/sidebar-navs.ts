@@ -54,12 +54,10 @@ export type SideBarMenus = {
    * One ordered list rather than a main/admin pair.
    *
    * The two were concatenated, which forced every admin-only entry below
-   * every ordinary one — so Help Desk could not sit between Threads and
-   * Social AI where it belongs. Order is the order here; who sees an entry
-   * is `adminOnly`, which is a separate question.
+   * every ordinary one. Order is the order here; who sees an entry is
+   * `adminOnly`, which is a separate question.
    */
   nav: MainSidebarMenuItem[];
-  navSecondary?: MainSidebarMenuItem[];
   navSubSidebar?: {
     [key: string]: SubSidebarMenuItem;
   };
@@ -87,9 +85,9 @@ function queryMatches(currentSearch: string, entryQuery: string) {
 /**
  * Which of a group of sibling nav entries should be highlighted.
  *
- * Sections are not always separate pages: Help Desk's are query filters on
- * one screen (`/helpdesk?filter=snoozed`). Matching on pathname alone lit
- * "All Inboxes" on every one of them and the others never.
+ * Sections are not always separate pages: some can be query filters on one
+ * screen (`/screen?filter=x`). Matching on pathname alone would light the
+ * bare entry on every one of them and the others never.
  *
  * The rule is most-specific-wins. An entry carrying a query is active only
  * when all of its params match. A bare-path entry is active for its path
@@ -313,19 +311,6 @@ export const sidebarMenus: SideBarMenus = {
     // sidebar with no change here.
     ...areaSubSidebars(),
   },
-
-  // navSecondary: [
-  //   {
-  //     title: "Get Help",
-  //     url: "#",
-  //     icon: IconHelp,
-  //   },
-  //   {
-  //     title: "Search",
-  //     url: "#",
-  //     icon: IconSearch,
-  //   },
-  // ],
 };
 
 /**

@@ -1,8 +1,6 @@
 "use client";
 
 import { AppSidebar } from "@/components/custom/app-sidebar";
-import { OnboardingDrawer } from "@/components/custom/onboarding-drawer";
-import { ShopifyOauthReturn } from "@/components/custom/shopify-oauth-return";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
   resolveSubSidebarKey,
@@ -108,17 +106,11 @@ export default function MainLayout({
         />
       </Suspense>
       <SidebarInset>
-        {/* Reads Shopify's OAuth return params from the query string. */}
-        <Suspense fallback={null}>
-          <ShopifyOauthReturn />
-          <OnboardingDrawer />
-        </Suspense>
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             {/* No vertical padding here: each page owns its spacing with a
-                uniform p-4 container, and the full-bleed screens (help desk,
-                live support, social inbox/feed) fill the viewport edge to
-                edge. Padding added here would double up on every page. */}
+                uniform p-4 container, and the full-bleed screens (live
+                support, thread detail) fill the viewport edge to edge. Padding added here would double up on every page. */}
             <div className={cn("flex flex-col", "h-full")}>
               {GetStoresIsLoading ? <StoreLoading /> : children}
             </div>

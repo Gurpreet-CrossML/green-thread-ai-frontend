@@ -42,16 +42,16 @@ export type NavArea = {
  * description and icon had to be repeated in the landing array, the page
  * itself, and the sidebar nav, which is how they drifted apart.
  *
- * A section's `href` may carry a query string. Help Desk's sections are
- * filters on one screen rather than separate pages, and the nav treats
- * them the same way as any other section — `activeNavUrl` decides which of
- * a group of siblings is the more specific match.
+ * A section's `href` may carry a query string, for sections that are
+ * filters on one screen rather than separate pages; the nav treats them the
+ * same way as any other section — `activeNavUrl` decides which of a group
+ * of siblings is the more specific match.
  */
 export const NAV_AREAS = {
   settings: {
     href: "/settings",
     title: "Settings",
-    description: "Manage your company, team, and connected platforms.",
+    description: "Manage your company, stores, and chat widget.",
     icon: IconSettings,
     sections: [
       {
@@ -67,7 +67,7 @@ export const NAV_AREAS = {
         title: "Stores",
         description: "The stores connected to your company.",
         pageDescription:
-          "Every store connected to your company. Switch which one the dashboard works on, limit its widget to specific IPs, or deactivate it.",
+          "Every store connected to your company. Switch which one the dashboard works on, get its widget script, or limit its widget to specific IPs.",
         icon: IconBuildingStore,
       },
       {
@@ -79,16 +79,6 @@ export const NAV_AREAS = {
           "How the chat widget looks on your storefront — colors, branding, messages, and quick links.",
         icon: IconImageGeneration,
       },
-      // AI Usage is hidden for now. To bring it back, uncomment this entry and
-      // rename app/settings/_ai-usage back to app/settings/ai-usage.
-      // {
-      //   href: "/settings/ai-usage",
-      //   title: "AI Usage",
-      //   description: "What the assistant costs to run, and how hard it works.",
-      //   pageDescription:
-      //     "Token spend, workflow costs and response latency for this store's assistant.",
-      //   icon: IconChartBar,
-      // },
     ],
   },
 } as const satisfies Record<string, NavArea>;

@@ -180,14 +180,6 @@ export default function Dashboard() {
       status: "Resolution Metric",
       statusVariant: "info" as const,
     },
-    {
-      label: "Escalation Rate",
-      value: `${FetchOperationalEfficiencyData?.escalation_rate?.percentage || 0}%`,
-      infoText:
-        "Shows the share of conversations that needed to be escalated to a human agent, which can highlight where the bot needs support.",
-      status: "Escalation Metric",
-      statusVariant: "info" as const,
-    },
   ];
 
   const exportFileStem = `dashboard_${storeCode || "all-stores"}_${from}_to_${to}`;

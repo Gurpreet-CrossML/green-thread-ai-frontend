@@ -11,22 +11,14 @@ type ThreadFilters = {
   is_active?: boolean;
   need_escalation?: boolean;
   user_type?: string;
-  has_ticket?: boolean;
   has_feedback?: boolean;
   feedback_rating?: string;
   tags?: (string | ThreadTagData)[];
   handled_by?: string;
-  channel?: string | string[];
   assignee?: string[];
 };
 
-/**
- * A tag as the threads endpoints return it.
- *
- * Declared here rather than imported from the support-ticket slice, which
- * already imports from this file — the shape is identical, so `TagBadge`
- * takes either without a conversion.
- */
+/** A tag as the threads endpoints return it. */
 export type ThreadTagData = {
   id?: number;
   name: string;
@@ -54,7 +46,7 @@ type GetThreadsArgs = {
 };
 
 export type Customer = {
-  // Null for a guest — decides which tickets endpoint the UI calls.
+  // Null for a guest.
   id: number | null;
   name: string;
   email: string;
@@ -70,7 +62,7 @@ export type Thread = {
   id: string;
   name: string | null;
   customer: Customer | null;
-  source?: "native" | "webhook" | "whatsapp" | null;
+  source?: "native" | null;
   chat_handler?: "ai" | "human";
   chat_handler_user?: ThreadHandlerUser | null;
   ai_responding: boolean;
@@ -84,36 +76,6 @@ export type Thread = {
   ended_at: string | null;
   tags?: (string | ThreadTagData)[];
   last_message?: string | null;
-};
-
-export type OrderItem = {
-  line_item_id: string;
-  name: string;
-  price: string;
-  product_id: number;
-  quantity: number;
-  variant_id: number;
-};
-export type OrderDetail = {
-  order_id: string | number;
-  order_url: string;
-  financial_status: string;
-  fulfillment_status: string;
-  is_cancelable: boolean;
-  is_returnable: boolean;
-  cancel_reason: string | null;
-  cancel_message: string | null;
-  cancelled_at: string | null;
-  return_message: string | null;
-  discount: string;
-  discount_codes: string[];
-  subtotal: string;
-  tax: string;
-  total: string;
-  email: string;
-  note: string | null;
-  payment_gateways: string[];
-  items: OrderItem[];
 };
 
 export type CartItem = {
@@ -150,10 +112,7 @@ export type ThreadJsonContent = {
   products?: ProductData[];
   /** Tyres recommended by the tyre-selection assistant. */
   recommendations?: TyreRecommendation[] | null;
-  order_details?: OrderDetail;
   cart_details?: CartDetails;
-  order_id?: string;
-  order_verification_step?: string;
   suggestions?: string[];
   /** Mirrors ChatHistory.confidence for resilient session reloads. */
   confidence?: number | null;
@@ -233,7 +192,7 @@ export type ThreadDetails = {
   store: number;
   customer_name: string | null;
   customer_email: string | null;
-  /** Identity only — enough to link the thread to its Catalog record. */
+  /** Identity only; null for a guest. */
   customer: { id: number } | null;
   is_active: boolean;
   total_messages: number;
@@ -298,92 +257,6 @@ export type UserMetadata = {
   device_type: string;
   browser: string;
   os: string;
-};
-
-/** Normalised slugs, never the helpdesk provider's numeric codes. */
-export type TicketStatus = "open" | "pending" | "resolved" | "closed";
-export type TicketPriority = "low" | "normal" | "high" | "urgent";
-
-export type ThreadTicketData = {
-  id: number;
-  subject: string;
-  description: string;
-  status: TicketStatus;
-  priority: TicketPriority;
-  channel: string;
-  is_read: boolean;
-  /** The conversation it was raised from — lets the UI jump back to it. */
-  thread_id: string;
-  /** Deep link to the provider, or null for tickets that live only here. */
-  ticket_url: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type OrderItemData = {
-  sku: string;
-  name: string;
-  quantity: number;
-  price: string;
-  product_id: number;
-  total_price: string | number;
-  price_incl_tax: string | number;
-  total_tax_price: string | number;
-};
-
-export type OrderShippingAddress = {
-  city: string;
-  email: string;
-  street: string[];
-  postcode: string;
-  firstname: string;
-  telephone: string;
-  country_id: string;
-  address1: string;
-  address2: string;
-  company: string;
-  country: string;
-  country_code: string;
-  first_name: string;
-  last_name: string;
-  latitude: string;
-  name: string;
-  longitude: string;
-  phone: string;
-  province: string;
-  province_code: string;
-  zip: string;
-  lastname: string;
-};
-
-export type OrderData = {
-  id: number;
-  order_id: string;
-  order_number: string;
-  created_at: string;
-  currency: string;
-  total_price: string;
-  subtotal_price: string;
-  total_tax: string;
-  total_shipping: string;
-  total_discounts: string;
-  financial_status: string | null;
-  fulfillment_status: string | null;
-  gateway: string;
-  shipping_method: string | null;
-  shipping_address: OrderShippingAddress;
-  items: OrderItemData[];
-  /**
-   * Deep link to this order in the store's own admin, for the actions we
-   * deliberately do not reimplement — refunds, cancellations, edits.
-   *
-   * Built server-side rather than here: the shape differs per platform
-   * (Shopify's admin.shopify.com/store/<handle>/orders/<id> against
-   * Magento's own admin path), and nothing the client holds identifies the
-   * store's admin host. Absent until the backend sends it, in which case
-   * the button simply does not render.
-   */
-  admin_url?: string | null;
 };
 
 export const FetchThreads = createAsyncThunk<ThreadsResponse, GetThreadsArgs>(
@@ -664,74 +537,6 @@ export const FetchCart = createAsyncThunk(
   },
 );
 
-/** Attach an existing customer record to a chat a guest started. */
-export const ThreadCustomerLink = createAsyncThunk(
-  "ThreadCustomerLink",
-  async (
-    {
-      storeCode,
-      threadId,
-      customerId,
-    }: { storeCode: string; threadId: string; customerId: number },
-    thunkAPI,
-  ) => {
-    try {
-      const response = await axiosInstance.patch(
-        `${ENDPOINTS.threadCustomerLink(threadId)}?store_code=${storeCode}`,
-        { customer: customerId },
-        { useBackend: true },
-      );
-      toast.success("Customer linked to this conversation.");
-      return response.data?.data ?? response.data;
-    } catch (error) {
-      const response = isAxiosError(error) ? error.response : undefined;
-      const data = response?.data;
-      toast.error("Couldn't link the customer", {
-        description: data?.message || "Please try again.",
-      });
-      return thunkAPI.rejectWithValue(data || "Something went wrong");
-    }
-  },
-);
-
-export const FetchFreshdeskTicketId = createAsyncThunk(
-  "FreshdeskTicketId",
-  async (
-    {
-      threadId,
-      customerId,
-      storeCode,
-    }: { threadId: string; customerId?: number | null; storeCode: string },
-    thunkAPI,
-  ) => {
-    try {
-      // A logged-in customer gets every ticket they've raised with this
-      // store; a guest only has the one conversation to show.
-      const url = customerId
-        ? ENDPOINTS.fetchCustomerTickets(customerId)
-        : ENDPOINTS.fetchThreadTickets(threadId);
-
-      const response = await axiosInstance.get(
-        `${url}?store_code=${storeCode}`,
-        { useBackend: true },
-      );
-      // Paginated envelope — the card only renders the first page.
-      return response.data.data?.results ?? [];
-    } catch (error) {
-      const response = isAxiosError(error) ? error.response : undefined;
-      const data = response?.data;
-
-      toast.error("Uh oh! Something went wrong.", {
-        description:
-          data?.message ||
-          "Unable to fetch the Support ticket ID, please try again later.",
-      });
-
-      return thunkAPI.rejectWithValue(data || "Something went wrong");
-    }
-  },
-);
-
 export const UploadMessageAttachments = createAsyncThunk(
   "UploadMessageAttachments",
   async ({ formData }: { formData: FormData }, thunkAPI) => {
@@ -757,34 +562,6 @@ export const UploadMessageAttachments = createAsyncThunk(
           data?.message ||
           "Could not upload the selected image(s). Please try again later.",
       });
-
-      return thunkAPI.rejectWithValue(data || "Something went wrong");
-    }
-  },
-);
-
-export const FetchOrders = createAsyncThunk(
-  "OrderData",
-  async (threadId: string, thunkAPI) => {
-    try {
-      const response = await axiosInstance.get(
-        ENDPOINTS.fetchOrderData(threadId),
-      );
-      const data = response.data.data;
-
-      return data;
-    } catch (error) {
-      const response = isAxiosError(error) ? error.response : undefined;
-      const data = response?.data;
-
-      // A 404 simply means no cart data exists for this thread — not an error worth surfacing.
-      if (response?.status !== 404) {
-        toast.error("Uh oh! Something went wrong.", {
-          description:
-            data?.message ||
-            "Unable to fetch the cart data, please try again later.",
-        });
-      }
 
       return thunkAPI.rejectWithValue(data || "Something went wrong");
     }
@@ -858,22 +635,10 @@ const ThreadSlice = createSlice({
       FetchCartDataIsError: null as null | string | object | unknown,
       FetchCartData: {} as CartDataResponse,
     },
-    FetchFreshdeskTicketIdState: {
-      FetchFreshdeskTicketIdIsLoading: false,
-      FetchFreshdeskTicketIdIsSuccess: false,
-      FetchFreshdeskTicketIdIsError: null as null | string | object | unknown,
-      FetchFreshdeskTicketIdData: [] as ThreadTicketData[],
-    },
     UploadMessageAttachmentsState: {
       UploadMessageAttachmentsIsLoading: false,
       UploadMessageAttachmentsIsSuccess: false,
       UploadMessageAttachmentsIsError: null as null | string | object | unknown,
-    },
-    FetchOrderDataState: {
-      FetchOrderDataIsLoading: false,
-      FetchOrderDataIsSuccess: false,
-      FetchOrderDataIsError: null as null | string | object | unknown,
-      FetchOrderData: [] as OrderData[],
     },
   },
   reducers: {},
@@ -1040,23 +805,6 @@ const ThreadSlice = createSlice({
         state.FetchCartDataState.FetchCartDataIsError = action.payload;
         state.FetchCartDataState.FetchCartDataIsSuccess = false;
       })
-      .addCase(FetchFreshdeskTicketId.pending, (state) => {
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsLoading = true;
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsError = null;
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsSuccess = false;
-      })
-      .addCase(FetchFreshdeskTicketId.fulfilled, (state, action) => {
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsLoading = false;
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdData =
-          action.payload;
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsSuccess = true;
-      })
-      .addCase(FetchFreshdeskTicketId.rejected, (state, action) => {
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsLoading = false;
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsError =
-          action.payload;
-        state.FetchFreshdeskTicketIdState.FetchFreshdeskTicketIdIsSuccess = false;
-      })
       .addCase(UploadMessageAttachments.pending, (state) => {
         state.UploadMessageAttachmentsState.UploadMessageAttachmentsIsLoading = true;
         state.UploadMessageAttachmentsState.UploadMessageAttachmentsIsError =
@@ -1072,21 +820,6 @@ const ThreadSlice = createSlice({
         state.UploadMessageAttachmentsState.UploadMessageAttachmentsIsError =
           action.payload;
         state.UploadMessageAttachmentsState.UploadMessageAttachmentsIsSuccess = false;
-      })
-      .addCase(FetchOrders.pending, (state) => {
-        state.FetchOrderDataState.FetchOrderDataIsLoading = true;
-        state.FetchOrderDataState.FetchOrderDataIsError = null;
-        state.FetchOrderDataState.FetchOrderDataIsSuccess = false;
-      })
-      .addCase(FetchOrders.fulfilled, (state, action) => {
-        state.FetchOrderDataState.FetchOrderDataIsLoading = false;
-        state.FetchOrderDataState.FetchOrderData = action.payload;
-        state.FetchOrderDataState.FetchOrderDataIsSuccess = true;
-      })
-      .addCase(FetchOrders.rejected, (state, action) => {
-        state.FetchOrderDataState.FetchOrderDataIsLoading = false;
-        state.FetchOrderDataState.FetchOrderDataIsError = action.payload;
-        state.FetchOrderDataState.FetchOrderDataIsSuccess = false;
       });
   },
 });

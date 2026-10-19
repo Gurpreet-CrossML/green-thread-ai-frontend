@@ -24,10 +24,6 @@ declare module "next-auth" {
     role?: StaffRole | null;
     permissions?: PermissionMap;
     accessible_stores?: AccessibleStore[];
-    // Onboarding flow: if the user has not yet completed the initial setup, we
-    // redirect them to the onboarding flow instead of the dashboard.
-    onboarding_pending?: boolean;
-    onboarding_step?: string | null;
   }
   interface Session {
     user: {
@@ -41,10 +37,6 @@ declare module "next-auth" {
       role?: StaffRole | null;
       permissions?: PermissionMap;
       accessible_stores?: AccessibleStore[];
-      // Onboarding flow: if the user has not yet completed the initial setup, we
-      // redirect them to the onboarding flow instead of the dashboard.
-      onboarding_pending?: boolean;
-      onboarding_step?: string | null;
     };
     // Propagated from the JWT when a token refresh fails, so the client can
     // prompt re-authentication.
@@ -65,8 +57,6 @@ declare module "next-auth/jwt" {
     role?: StaffRole | null;
     permissions?: PermissionMap;
     accessible_stores?: AccessibleStore[];
-    onboarding_pending?: boolean;
-    onboarding_step?: string | null;
     // Set when a refresh attempt fails; the client treats it as a signal to
     // re-authenticate (the stale access token will start returning 401s).
     error?: string;
@@ -155,18 +145,30 @@ export const authOptions: AuthOptions = {
           body: JSON.stringify(credentials),
         });
 
-        if (res.status === 500) {
-          throw new Error("Server error");
+        // Every failure is thrown as Django's `{ message, data }` envelope
+        // (JSON in the error string), so the login form reads one shape.
+        // Django answers in JSON, but a crash page or a proxy in front of it
+        // answers in HTML; parsing that put "Unexpected token '<'" on the
+        // form, so anything that isn't JSON becomes a plain message.
+        const data = await res.json().catch(() => null);
+        if (!data) {
+          throw new Error(
+            JSON.stringify({
+              message: "We couldn't log you in right now. Please try again.",
+            }),
+          );
         }
-
-        const data = await res.json();
 
         if (res.ok && data?.data) {
           // Platform superusers must NEVER access the dashboard. Reject them at
           // login so they never receive a session — only company admins
           // (is_staff=true) and staff (is_staff=false) are allowed in.
           if (data.data.is_superuser) {
-            throw new Error("Superuser accounts cannot access the dashboard.");
+            throw new Error(
+              JSON.stringify({
+                message: "Superuser accounts cannot access the dashboard.",
+              }),
+            );
           }
           return data.data;
         }
@@ -210,15 +212,13 @@ export const authOptions: AuthOptions = {
           role: token.role,
           permissions: token.permissions,
           accessible_stores: token.accessible_stores,
-          onboarding_pending: token.onboarding_pending,
-          onboarding_step: token.onboarding_step,
         },
       };
       return session;
     },
 
     // Store all data in the JWT (internal only)
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       // On initial login
       if (user) {
         token.access_token = user.token;
@@ -236,9 +236,6 @@ export const authOptions: AuthOptions = {
         token.role = user.role ?? null;
         token.permissions = user.permissions ?? {};
         token.accessible_stores = user.accessible_stores ?? [];
-
-        token.onboarding_pending = user.onboarding_pending ?? false;
-        token.onboarding_step = user.onboarding_step ?? null;
 
         return token;
       }
@@ -258,19 +255,13 @@ export const authOptions: AuthOptions = {
       // Keep company/identity claims fresh — role, permissions and company
       // can change server-side after login. Cached (≤1 call/min/token) and
       // fails open to the existing claims on any error.
-      const identity = await refreshIdentity(token.access_token, {
-        fresh: trigger === "update",
-      });
+      const identity = await refreshIdentity(token.access_token);
       if (identity) {
         token.company_code = identity.company_code;
         token.is_staff = identity.is_staff;
         token.role = identity.role;
         token.permissions = identity.permissions;
         token.accessible_stores = identity.accessible_stores;
-        if (identity.onboarding_pending !== undefined) {
-          token.onboarding_pending = identity.onboarding_pending;
-          token.onboarding_step = identity.onboarding_step ?? null;
-        }
       }
 
       return token;

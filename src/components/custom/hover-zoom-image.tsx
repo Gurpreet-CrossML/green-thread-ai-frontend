@@ -98,7 +98,7 @@ export default function HoverZoomImage({
         sizes="(max-width: 768px) 33vw, 160px"
         className="object-cover"
         // Product images come from arbitrary, untrusted
-        // store hostnames (Magento/Shopify/etc.) we can't
+        // store hostnames we can't
         // enumerate. unoptimized renders a direct <img> so
         // we skip the remotePatterns allowlist and avoid
         // proxying third-party bandwidth through our optimizer.

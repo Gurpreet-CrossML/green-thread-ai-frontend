@@ -25,19 +25,14 @@ export function listRowClassName(active?: boolean) {
 }
 
 /**
- * One row in a conversation list — a Help Desk ticket, a Live Support chat.
+ * One row in a conversation list — a Live Support chat: who it is with,
+ * when it last moved, a teaser of the latest message, and something small
+ * underneath.
  *
- * Both lists are the same object: who it is with, when it last moved, a
- * teaser of the latest message, and something small underneath. They had
- * drifted into two layouts with different padding, borders and unread
- * treatments, so the same customer looked like a different kind of thing
- * depending on which screen you were on.
- *
- * Everything that varies is a slot, so neither caller has to reproduce the
+ * Everything that varies is a slot, so a caller never has to reproduce the
  * geometry to add its own detail.
  */
 export function ConversationRow({
-  accent,
   avatar,
   title,
   titleTooltip,
@@ -50,12 +45,6 @@ export function ConversationRow({
   active = false,
   onSelect,
 }: {
-  /**
-   * A full-height stripe down the row's leading edge, before the avatar —
-   * a ticket's priority. Optional: a list whose rows have no such ranking
-   * leaves it out and loses the column entirely.
-   */
-  accent?: React.ReactNode;
   avatar: React.ReactNode;
   title: React.ReactNode;
   /**
@@ -66,7 +55,7 @@ export function ConversationRow({
   /** Weights the title and teaser — an unread row should catch the eye. */
   unread?: boolean;
   timestamp: string;
-  /** Sits beside the timestamp: an unread dot, a snooze bell. */
+  /** Sits beside the timestamp: an unread dot. */
   indicator?: React.ReactNode;
   preview: React.ReactNode;
   previewLines?: 1 | 2;
@@ -85,7 +74,6 @@ export function ConversationRow({
       // full height, dropping the dot to the bottom of the card.
       className={listRowClassName(active)}
     >
-      {accent}
       {avatar}
 
       <div className="min-w-0 flex-1">

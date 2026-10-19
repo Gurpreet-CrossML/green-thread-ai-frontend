@@ -20,7 +20,7 @@ databaseUrl.searchParams.delete("channel_binding");
 //    check, which can't pass through the proxy.
 function sslConfig(): PoolConfig["ssl"] {
   if (databaseUrl.hostname.endsWith(".neon.tech")) {
-    return { rejectUnauthorized: true };
+    return { rejectUnauthorized: false };
   }
   return {
     ca: fs

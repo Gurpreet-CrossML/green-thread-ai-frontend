@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formikErrorsFromZod } from "@/lib/form-errors";
+import { applyServerFieldErrors, formikErrorsFromZod } from "@/lib/form-errors";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
@@ -32,7 +32,6 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"form">) {
   const router = useRouter();
-  const [authError, setAuthError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -53,7 +52,6 @@ export function LoginForm({
     },
     onSubmit: async (values) => {
       setIsLoading(true);
-      setAuthError("");
 
       const res = await signIn("credentials", {
         redirect: false,
@@ -67,23 +65,24 @@ export function LoginForm({
         router.push("/");
         router.refresh();
       } else {
-        let message = "Invalid email or password";
-        if (res?.error) {
-          try {
-            const responseErrors = JSON.parse(res.error);
-            message = responseErrors?.message ?? message;
-            toast.error("Log in Failed!", {
-              description:
-                message +
-                (responseErrors?.data?.non_field_errors
-                  ? `: ${responseErrors.data.non_field_errors}`
-                  : ""),
-            });
-          } catch {
-            message = res.error;
-            setAuthError(message);
-          }
+        // authorize() throws Django's `{ message, data }` envelope as JSON.
+        let payload: {
+          message?: string;
+          data?: { non_field_errors?: string };
+        } | null = null;
+        try {
+          payload = JSON.parse(res?.error ?? "");
+        } catch {
+          payload = null;
         }
+        // Errors Django ties to `email` / `password` go under those fields.
+        applyServerFieldErrors(formik, payload);
+        toast.error("Log in Failed!", {
+          description:
+            payload?.data?.non_field_errors ??
+            payload?.message ??
+            "We couldn't log you in right now. Please try again.",
+        });
       }
 
       setIsLoading(false);
@@ -177,11 +176,6 @@ export function LoginForm({
             Remember me
           </FieldLabel>
         </Field>
-        {authError && (
-          <Typography variant="small" className="text-center text-destructive">
-            {authError}
-          </Typography>
-        )}
         <Field>
           <Button
             disabled={isLoading}
@@ -194,15 +188,6 @@ export function LoginForm({
             {!isLoading && <IconArrowRight className="absolute right-4" />}
           </Button>
         </Field>
-        <Typography variant="muted" className="text-center text-sm">
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/signup"
-            className="font-medium text-primary hover:underline"
-          >
-            Create one
-          </Link>
-        </Typography>
       </FieldGroup>
     </form>
   );

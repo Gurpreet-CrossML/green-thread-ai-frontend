@@ -11,19 +11,8 @@ import {
   chatbotFeedback,
   chatBotevent,
   sentimentAnalysis,
-  supportTicket,
 } from "@/lib/drizzle/schema";
-import {
-  and,
-  eq,
-  gt,
-  gte,
-  lte,
-  inArray,
-  notInArray,
-  isNotNull,
-  sql,
-} from "drizzle-orm";
+import { and, eq, gt, gte, lte, sql } from "drizzle-orm";
 
 /**
  * Port of the Django analytics "dashboard" serializers (analytics/serializers.py)
@@ -112,153 +101,6 @@ function pyRound(value: number, digits = 0): number {
 const round2 = (v: number) => pyRound(v, 2);
 
 // ===========================================================================
-// 1. ConversionAnalyticsSerializer  →  /analytics/conversion/
-// ===========================================================================
-
-export async function get_conversion_analytics(params: {
-  store_code?: string;
-  from?: string;
-  to?: string;
-}) {
-  const db = getDb();
-  const endDate = parseQueryDate(params.to, istToday());
-  const startDate = parseQueryDate(params.from, addDays(endDate, -30));
-
-  const threadFilters = [
-    localDateRange(sql`${chatThread.createdAt}`, startDate, endDate),
-  ];
-  const storeScope = storeIdScope(chatThread.storeId, params.store_code);
-  if (storeScope) threadFilters.push(storeScope);
-  const threadWhere = and(...threadFilters)!;
-
-  // total_threads
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(chatThread)
-    .where(threadWhere);
-  const totalThreads = Number(total);
-
-  // Distinct threads that have a given event type, restricted to in-range threads
-  // and (for cart/checkout) to threads from the prior funnel stage.
-  const distinctThreadsWith = async (
-    eventType: string,
-    restrictTo?: string[],
-  ) => {
-    const conds = [
-      eq(chatBotevent.eventType, eventType),
-      sql`${chatBotevent.threadId} IN (SELECT id FROM chat_thread WHERE ${threadWhere})`,
-    ];
-    if (restrictTo) {
-      if (restrictTo.length === 0) return [];
-      conds.push(inArray(chatBotevent.threadId, restrictTo));
-    }
-    const rows = await db
-      .selectDistinct({ threadId: chatBotevent.threadId })
-      .from(chatBotevent)
-      .where(and(...conds));
-    return rows.map((r) => r.threadId);
-  };
-
-  const viewedIds = await distinctThreadsWith("view_product");
-  const cartIds = await distinctThreadsWith("add_to_cart", viewedIds);
-  const checkoutIds = await distinctThreadsWith("checkout_link", cartIds);
-
-  const viewedCount = viewedIds.length;
-  const cartCount = cartIds.length;
-  const checkoutCount = checkoutIds.length;
-
-  const metric = (count: number) => ({
-    count,
-    percentage: totalThreads ? round2((count / totalThreads) * 100) : 0,
-  });
-
-  const funnel = {
-    viewed_products: metric(viewedCount),
-    added_to_cart: metric(cartCount),
-    checkout_reached: metric(checkoutCount),
-  };
-
-  // ---------- CATEGORY DISTRIBUTION ----------
-  // BotEvent view_product, category not null, distinct thread count per category,
-  // ordered by count desc. Top 4 + Others. Percentage is over viewedCount.
-  const catRows = await db
-    .select({
-      category: chatBotevent.category,
-      threadCount: sql<number>`count(distinct ${chatBotevent.threadId})::int`,
-    })
-    .from(chatBotevent)
-    .where(
-      and(
-        eq(chatBotevent.eventType, "view_product"),
-        isNotNull(chatBotevent.category),
-        sql`${chatBotevent.threadId} IN (SELECT id FROM chat_thread WHERE ${threadWhere})`,
-      ),
-    )
-    .groupBy(chatBotevent.category)
-    .orderBy(sql`count(distinct ${chatBotevent.threadId}) desc`);
-
-  const topFour = catRows.slice(0, 4);
-  const othersCount = catRows
-    .slice(4)
-    .reduce((s, r) => s + Number(r.threadCount), 0);
-
-  const categoryDistribution: Array<{
-    category: string;
-    threads: number;
-    percentage: number;
-  }> = topFour.map((item) => ({
-    category: item.category as string,
-    threads: Number(item.threadCount),
-    percentage: viewedCount
-      ? round2((Number(item.threadCount) / viewedCount) * 100)
-      : 0,
-  }));
-
-  if (othersCount) {
-    categoryDistribution.push({
-      category: "Others",
-      threads: othersCount,
-      percentage: viewedCount ? round2((othersCount / viewedCount) * 100) : 0,
-    });
-  }
-
-  // ---------- TOP PRODUCTS ADDED TO CART ----------
-  const prodRows = await db
-    .select({
-      productId: chatBotevent.productId,
-      productName: chatBotevent.productName,
-      threadCount: sql<number>`count(distinct ${chatBotevent.threadId})::int`,
-    })
-    .from(chatBotevent)
-    .where(
-      and(
-        eq(chatBotevent.eventType, "add_to_cart"),
-        isNotNull(chatBotevent.productName),
-        sql`${chatBotevent.threadId} IN (SELECT id FROM chat_thread WHERE ${threadWhere})`,
-      ),
-    )
-    .groupBy(chatBotevent.productId, chatBotevent.productName)
-    .orderBy(sql`count(distinct ${chatBotevent.threadId}) desc`)
-    .limit(5);
-
-  const topProducts = prodRows.map((item) => ({
-    product_id: item.productId,
-    product_name: item.productName,
-    threads: Number(item.threadCount),
-    percentage: cartCount
-      ? round2((Number(item.threadCount) / cartCount) * 100)
-      : 0,
-  }));
-
-  return {
-    total_threads: totalThreads,
-    funnel,
-    category_distribution: categoryDistribution,
-    top_products_added_to_cart: topProducts,
-  };
-}
-
-// ===========================================================================
 // 2. FeedbackInsightsSerializer  →  /analytics/feedback-insights/
 // ===========================================================================
 
@@ -283,17 +125,9 @@ export async function get_feedback_insights(params: {
 
   // All aggregates here are independent of one another, so run them
   // concurrently (one round-trip instead of ~8 sequential ones). The 3 rating
-  // counts collapse into a single GROUP BY, and the per-thread support-ticket
-  // lookup (previously an N+1 loop) becomes one set-membership query.
-  const [
-    totalRows,
-    totalFbRows,
-    ratingRows,
-    fcrRows,
-    ahtRows,
-    analyses,
-    ticketThreadRows,
-  ] = await runSequentially([
+  // counts collapse into a single GROUP BY.
+  const [totalRows, totalFbRows, ratingRows, fcrRows, ahtRows, analyses] =
+    await runSequentially([
     db
       .select({ total: sql<number>`count(*)::int` })
       .from(chatThread)
@@ -326,16 +160,11 @@ export async function get_feedback_insights(params: {
       .groupBy(chatHistory.threadId),
     db
       .select({
-        threadId: sentimentAnalysis.threadId,
         totalQueries: sentimentAnalysis.totalQueries,
         unresolvedQueries: sentimentAnalysis.unresolvedQueries,
       })
       .from(sentimentAnalysis)
       .where(sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`),
-    db
-      .selectDistinct({ threadId: supportTicket.threadId })
-      .from(supportTicket)
-      .where(sql`${supportTicket.threadId} IN ${threadSubquery}`),
   ]);
 
   const totalThreads = Number(totalRows[0].total);
@@ -427,21 +256,18 @@ export async function get_feedback_insights(params: {
     return 5;
   };
 
-  // Threads (in range) that have >= 1 support ticket — single query, replacing
-  // the previous per-thread count(*) (effort += 3 when the thread has a ticket).
-  const ticketThreadSet = new Set(ticketThreadRows.map((r) => r.threadId));
-  const cesValues = analyses.map((a) => {
-    let effort = Number(a.totalQueries) + Number(a.unresolvedQueries) * 2;
-    if (ticketThreadSet.has(a.threadId)) effort += 3;
-    return normalizeEffort(effort);
-  });
+  const cesValues = analyses.map((a) =>
+    normalizeEffort(
+      Number(a.totalQueries) + Number(a.unresolvedQueries) * 2,
+    ),
+  );
   const avgCes = cesValues.length
     ? round2(cesValues.reduce((s, v) => s + v, 0) / cesValues.length)
     : 0.0;
   const customerEffortScore = {
     score: avgCes,
     scale: "1 (very easy) to 5 (very hard)",
-    logic: "Based on number of queries, unresolved queries & escalations",
+    logic: "Based on number of queries & unresolved queries",
   };
 
   // Performance overview
@@ -565,96 +391,6 @@ export async function get_conversion_rate(params: {
 }
 
 // ===========================================================================
-// 7. QueryCategoryInsightsSerializer  →  /analytics/query-category-insights/
-// ===========================================================================
-
-const INTENT_TO_CATEGORY_LABEL: Record<string, string> = {
-  product_search: "Product Inquiry",
-  product_info: "Product Inquiry",
-  order_tracking: "Order Issues",
-  return_policy: "Return & Refund",
-  payment_help: "Payment/Billing",
-  shipping_delivery: "Shipping & Delivery",
-  general_conversation: "General Conversation",
-  other: "Request for Help",
-};
-
-export async function get_query_category_insights(params: {
-  store_code?: string;
-  from?: string;
-  to?: string;
-}) {
-  const db = getDb();
-  const endDate = parseQueryDate(params.to, istToday());
-  const startDate = parseQueryDate(params.from, addDays(endDate, -30));
-
-  // NOTE: threads are filtered with is_active = False (closed threads only).
-  const filters = [
-    localDateRange(sql`${chatThread.createdAt}`, startDate, endDate),
-    eq(chatThread.isActive, false),
-  ];
-  const storeScope = storeIdScope(chatThread.storeId, params.store_code);
-  if (storeScope) filters.push(storeScope);
-  const threadWhere = and(...filters)!;
-
-  const analyses = await db
-    .select({
-      topIntent: sentimentAnalysis.topIntent,
-      resolvedQueriesList: sentimentAnalysis.resolvedQueriesList,
-      unresolvedQueriesList: sentimentAnalysis.unresolvedQueriesList,
-    })
-    .from(sentimentAnalysis)
-    .where(
-      sql`${sentimentAnalysis.threadId} IN (SELECT id FROM chat_thread WHERE ${threadWhere})`,
-    );
-
-  const stats: Record<string, { answered: number; unanswered: number }> = {};
-  for (const a of analyses) {
-    const label =
-      INTENT_TO_CATEGORY_LABEL[a.topIntent] ?? "General Conversation";
-    if (!(label in stats)) stats[label] = { answered: 0, unanswered: 0 };
-    const resolved = Array.isArray(a.resolvedQueriesList)
-      ? a.resolvedQueriesList
-      : [];
-    const unresolved = Array.isArray(a.unresolvedQueriesList)
-      ? a.unresolvedQueriesList
-      : [];
-    stats[label].answered += resolved.length;
-    stats[label].unanswered += unresolved.length;
-  }
-
-  // Build list (insertion order of dict keys preserved, like Python 3.7+),
-  // filter out empty, then stable-sort by total desc.
-  const categoryBreakdown = Object.entries(stats)
-    .map(([label, counts]) => ({
-      category_label: label,
-      answered: counts.answered,
-      unanswered: counts.unanswered,
-      total: counts.answered + counts.unanswered,
-    }))
-    .filter((c) => c.answered + c.unanswered > 0);
-
-  // Python list.sort is stable; sort by total desc preserving original order on ties.
-  categoryBreakdown.sort((a, b) => b.total - a.total);
-
-  const totalAnswered = categoryBreakdown.reduce((s, c) => s + c.answered, 0);
-  const totalUnanswered = categoryBreakdown.reduce(
-    (s, c) => s + c.unanswered,
-    0,
-  );
-  const totalQueries = totalAnswered + totalUnanswered;
-  const mostAsked = categoryBreakdown.length ? categoryBreakdown[0] : {};
-
-  return {
-    category_breakdown: categoryBreakdown,
-    most_asked_category: mostAsked,
-    total_queries: totalQueries,
-    total_answered: totalAnswered,
-    total_unanswered: totalUnanswered,
-  };
-}
-
-// ===========================================================================
 // Helpers for engagement & operational efficiency (hour/period formatting)
 // ===========================================================================
 
@@ -707,7 +443,6 @@ export async function get_engagements(params: {
     hourlyMsgRows,
     afterHoursRows,
     botHourRows,
-    humanHourRows,
     trendRows,
   ] = await runSequentially([
     // total threads
@@ -797,19 +532,6 @@ export async function get_engagements(params: {
       .where(sql`${chatHistory.threadId} IN ${threadSubquery}`)
       .groupBy(
         sql`EXTRACT(HOUR FROM (${chatHistory.createdAt} AT TIME ZONE ${APP_TZ_SQL}))`,
-      ),
-    // 24-hour load distribution — human (SupportTicket) by hour (current tz)
-    db
-      .select({
-        hour: sql<number>`EXTRACT(HOUR FROM (${supportTicket.createdAt} AT TIME ZONE ${APP_TZ_SQL}))::int`,
-        count: sql<number>`count(${supportTicket.id})::int`,
-      })
-      .from(supportTicket)
-      .where(
-        localDateRange(sql`${supportTicket.createdAt}`, startDate, endDate),
-      )
-      .groupBy(
-        sql`EXTRACT(HOUR FROM (${supportTicket.createdAt} AT TIME ZONE ${APP_TZ_SQL}))`,
       ),
     // conversation trend: user messages joined to SentimentAnalysis, bucketed
     // by weekday in JS. ExtractWeekDay: 1=Sun..7=Sat (Postgres dow+1).
@@ -908,20 +630,15 @@ export async function get_engagements(params: {
 
   const afterHoursQueries = Number(afterHoursRows[0].afterHours);
 
-  // 24-hour load distribution (current tz): chatbot = ChatHistory by hour,
-  // human = SupportTicket by hour.
+  // 24-hour load distribution (current tz): chatbot = ChatHistory by hour.
   const botHourMap: Record<number, number> = {};
   for (const r of botHourRows) botHourMap[Number(r.hour)] = Number(r.count);
-
-  const humanHourMap: Record<number, number> = {};
-  for (const r of humanHourRows) humanHourMap[Number(r.hour)] = Number(r.count);
 
   const loadDistribution = [];
   for (let hour = 0; hour < 24; hour++) {
     loadDistribution.push({
       hour: formatHourIp(hour),
       chatbot: botHourMap[hour] ?? 0,
-      human: humanHourMap[hour] ?? 0,
     });
   }
 
@@ -1008,40 +725,21 @@ export async function get_operational_efficiency(params: {
     .where(threadWhere);
   const totalThreads = Number(total);
 
-  // Escalated thread ids (distinct) from SupportTicket for in-range threads.
-  const escalatedRows = await db
-    .selectDistinct({ threadId: supportTicket.threadId })
-    .from(supportTicket)
-    .where(sql`${supportTicket.threadId} IN ${threadSubquery}`);
-  const escalatedCount = escalatedRows.length;
-  const escalatedThreadIds = escalatedRows
-    .map((r) => r.threadId)
-    .filter((id): id is string => id !== null);
-
-  // Bot-resolved: SentimentAnalysis for in-range threads, excluding escalated,
-  // resolved_queries > 0.
-  const botResolvedConds = [
-    sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`,
-    gt(sentimentAnalysis.resolvedQueries, 0),
-  ];
-  if (escalatedThreadIds.length > 0) {
-    botResolvedConds.push(
-      notInArray(sentimentAnalysis.threadId, escalatedThreadIds),
-    );
-  }
+  // Bot-resolved: SentimentAnalysis for in-range threads, resolved_queries > 0.
   const [{ botResolved }] = await db
     .select({ botResolved: sql<number>`count(*)::int` })
     .from(sentimentAnalysis)
-    .where(and(...botResolvedConds));
+    .where(
+      and(
+        sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`,
+        gt(sentimentAnalysis.resolvedQueries, 0),
+      ),
+    );
   const botResolvedCount = Number(botResolved);
 
   const botResolutionPercentage = totalThreads
     ? round2((botResolvedCount / totalThreads) * 100)
     : 0;
-  const escalationPercentage = totalThreads
-    ? round2((escalatedCount / totalThreads) * 100)
-    : 0;
-
   let selfServiceSuccess: string;
   if (botResolutionPercentage >= 70) selfServiceSuccess = "High";
   else if (botResolutionPercentage >= 40) selfServiceSuccess = "Medium";
@@ -1060,8 +758,7 @@ export async function get_operational_efficiency(params: {
     .from(chatThread)
     .where(prevWhere);
 
-  // prev_bot_resolved: SentimentAnalysis for prev threads, exclude any thread that
-  // has a support ticket (thread__support_tickets__isnull=False), resolved>0.
+  // prev_bot_resolved: SentimentAnalysis for prev threads, resolved>0.
   const [{ prevBotResolved }] = await db
     .select({ prevBotResolved: sql<number>`count(*)::int` })
     .from(sentimentAnalysis)
@@ -1069,7 +766,6 @@ export async function get_operational_efficiency(params: {
       and(
         sql`${sentimentAnalysis.threadId} IN ${prevSubquery}`,
         gt(sentimentAnalysis.resolvedQueries, 0),
-        sql`${sentimentAnalysis.threadId} NOT IN (SELECT thread_id FROM support_ticket)`,
       ),
     );
   const prevPercentage = Number(prevTotal)
@@ -1090,11 +786,6 @@ export async function get_operational_efficiency(params: {
       type: "Bot Resolved",
       count: botResolvedCount,
       percentage: botResolutionPercentage,
-    },
-    {
-      type: "Escalated",
-      count: escalatedCount,
-      percentage: escalationPercentage,
     },
   ];
 
@@ -1198,14 +889,6 @@ export async function get_operational_efficiency(params: {
       .where(periodThreadWhere);
     const totalPeriodThreads = Number(totPeriod);
 
-    const [{ esc }] = await db
-      .select({
-        esc: sql<number>`count(distinct ${supportTicket.threadId})::int`,
-      })
-      .from(supportTicket)
-      .where(sql`${supportTicket.threadId} IN ${periodThreadSubquery}`);
-    const periodEscalated = Number(esc);
-
     const [{ botRes }] = await db
       .select({ botRes: sql<number>`count(*)::int` })
       .from(sentimentAnalysis)
@@ -1213,16 +896,12 @@ export async function get_operational_efficiency(params: {
         and(
           sql`${sentimentAnalysis.threadId} IN ${periodThreadSubquery}`,
           gt(sentimentAnalysis.resolvedQueries, 0),
-          sql`${sentimentAnalysis.threadId} NOT IN (SELECT thread_id FROM support_ticket)`,
         ),
       );
     const periodBotResolved = Number(botRes);
 
     const botResolvedPercentage = totalPeriodThreads
       ? round2((periodBotResolved / totalPeriodThreads) * 100)
-      : 0;
-    const escalatedPercentage = totalPeriodThreads
-      ? round2((periodEscalated / totalPeriodThreads) * 100)
       : 0;
 
     resolutionTrend.push({
@@ -1231,29 +910,22 @@ export async function get_operational_efficiency(params: {
         count: periodBotResolved,
         percentage: botResolvedPercentage,
       },
-      escalated: { count: periodEscalated, percentage: escalatedPercentage },
     });
   }
 
-  // NOTE: Django reuses the loop variables `escalated_count` / `bot_resolved_count`
-  // inside the trend loop, so the top-level escalation_rate/bot_resolution_rate
-  // `count` reflect the LAST trend period's values (a Django quirk we replicate).
+  // NOTE: Django reuses the loop variable `bot_resolved_count` inside the
+  // trend loop, so the top-level bot_resolution_rate `count` reflects the LAST
+  // trend period's value (a Django quirk we replicate).
   let finalBotResolvedCount = botResolvedCount;
-  let finalEscalatedCount = escalatedCount;
   if (resolutionTrend.length > 0) {
-    const last = resolutionTrend[resolutionTrend.length - 1];
-    finalBotResolvedCount = last.bot_resolved.count;
-    finalEscalatedCount = last.escalated.count;
+    finalBotResolvedCount =
+      resolutionTrend[resolutionTrend.length - 1].bot_resolved.count;
   }
 
   return {
     bot_resolution_rate: {
       count: finalBotResolvedCount,
       percentage: botResolutionPercentage,
-    },
-    escalation_rate: {
-      count: finalEscalatedCount,
-      percentage: escalationPercentage,
     },
     self_service_success: selfServiceSuccess,
     improvement_trend: {

@@ -1,16 +1,13 @@
 "use client";
 
-import Image from "next/image";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   IconBuildingStore,
   IconDotsVertical,
   IconCode,
-  // IconPlugOff,
   IconShieldLock,
 } from "@tabler/icons-react";
 
-import { STORE_PLATFORMS } from "@/lib/config";
 import { formatDate } from "@/lib/helpers";
 import { BADGE_TONE_STYLES } from "@/lib/badge-tones";
 import { cn } from "@/lib/utils";
@@ -30,8 +27,6 @@ export type StoreRowActions = {
   onEditAllowedIps: (store: StoreListItem) => void;
   onGetWidgetScript: (store: StoreListItem) => void;
   onSelect: (store: StoreListItem) => void;
-  // Store deactivation is hidden until the product allows users to deactivate stores.
-  // onDeactivate: (store: StoreListItem) => void;
 };
 
 export function getStoreColumns({
@@ -39,7 +34,6 @@ export function getStoreColumns({
   onEditAllowedIps,
   onGetWidgetScript,
   onSelect,
-  // onDeactivate,
 }: StoreRowActions): ColumnDef<StoreListItem>[] {
   return [
     {
@@ -62,33 +56,6 @@ export function getStoreColumns({
           {row.original.code}
         </span>
       ),
-    },
-    {
-      accessorKey: "platform",
-      header: "Platform",
-      cell: ({ row }) => {
-        const platform = STORE_PLATFORMS.find(
-          (p) => p.value === row.original.platform,
-        );
-        if (!platform)
-          return (
-            <span className="text-muted-foreground">
-              {row.original.platform || "—"}
-            </span>
-          );
-        return (
-          <div className="flex items-center gap-2">
-            <Image
-              src={platform.icon}
-              alt=""
-              width={16}
-              height={16}
-              className="size-4 object-contain"
-            />
-            <span>{platform.label}</span>
-          </div>
-        );
-      },
     },
     {
       accessorKey: "default_language",
@@ -189,17 +156,6 @@ export function getStoreColumns({
                   <IconBuildingStore />
                   {isSelected ? "Currently selected" : "Work on this store"}
                 </DropdownMenuItem>
-                {/*
-                Store deactivation is hidden until the product allows users to deactivate stores.
-                <DropdownMenuItem
-                  disabled={store.is_active === false}
-                  className="text-destructive focus:text-destructive"
-                  onSelect={() => onDeactivate(store)}
-                >
-                  <IconPlugOff />
-                  Deactivate
-                </DropdownMenuItem>
-                */}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

@@ -5,7 +5,6 @@ import * as React from "react";
 import { NavMain, SidebarMenuItemWrapper } from "@/components/custom/nav-main";
 import { CollapsibleMenuItem } from "@/components/custom/sub-sidebar-menu";
 import { StoreSwitcher } from "@/components/custom/store-switcher";
-import { NavSecondary } from "@/components/custom/nav-secondary";
 import { NavUser } from "@/components/custom/nav-user";
 import {
   Sidebar,
@@ -197,12 +196,6 @@ export function AppSidebar({
                 : 0
             }
           />
-          {sidebarMenus.navSecondary && (
-            <NavSecondary
-              items={sidebarMenus.navSecondary}
-              className="mt-auto"
-            />
-          )}
         </SidebarContent>
         <SidebarFooter>
           <NavUser />

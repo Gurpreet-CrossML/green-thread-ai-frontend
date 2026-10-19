@@ -1,16 +1,11 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { IconBrandWhatsapp, IconWorld } from "@tabler/icons-react";
 
-import {
-  HiddenTagsBadge,
-  TagBadge,
-} from "@/components/custom/helpdesk/tag-badge";
+import { HiddenTagsBadge, TagBadge } from "@/components/custom/tag-badge";
 import { Badge } from "@/components/ui/badge";
 import { Typography } from "@/components/ui/typography";
-import type { SupportTicketTagData } from "@/redux/api-slice/support-ticket-slice";
-import type { Thread } from "@/redux/api-slice/thread-slice";
+import type { Thread, ThreadTagData } from "@/redux/api-slice/thread-slice";
 import Markdown from "react-markdown";
 
 // Time of day only, e.g. "2:14 PM" — the date comes from the group header.
@@ -42,10 +37,10 @@ function formatDuration(start: string, end: string | null | undefined): string {
  * returns bare names. Both reach this cell, and a record rendered as a
  * React child is what crashed the Threads page.
  */
-export type ThreadTag = string | SupportTicketTagData;
+export type ThreadTag = string | ThreadTagData;
 
 /** Bare names get the neutral chip; records keep the colour they were given. */
-function toTagRecord(tag: ThreadTag): SupportTicketTagData {
+function toTagRecord(tag: ThreadTag): ThreadTagData {
   return typeof tag === "string"
     ? { name: tag, color: "", description: "" }
     : tag;
@@ -103,31 +98,6 @@ export const threadsColumns: ColumnDef<Thread>[] = [
             </Typography>
           )}
         </div>
-      );
-    },
-  },
-
-  // Channel — derived from the thread source: WhatsApp, or Web for
-  // native/webhook threads.
-  {
-    accessorKey: "source",
-    header: "Channel",
-    cell: ({ row }) => {
-      const source = row.original.source;
-      if (!source) return <span className="text-muted-foreground">—</span>;
-      const isWhatsapp = source === "whatsapp";
-      return (
-        <Badge
-          variant="outline"
-          className={
-            isWhatsapp
-              ? "border-green-200 bg-green-50 text-green-700"
-              : "border-blue-200 bg-blue-50 text-blue-700"
-          }
-        >
-          {isWhatsapp ? <IconBrandWhatsapp /> : <IconWorld />}
-          {isWhatsapp ? "WhatsApp" : "Web"}
-        </Badge>
       );
     },
   },

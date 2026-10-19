@@ -32,12 +32,10 @@ export type ThreadFilterState = {
   search: string;
   is_active: "" | "true" | "false";
   user_type: "" | "guest" | "logged_in";
-  has_ticket: "" | "true" | "false";
   has_feedback: "" | "true" | "false";
   feedback_rating: FeedbackRating;
   tags: string[];
   handled_by: "" | "ai" | "human";
-  channel: "" | "whatsapp" | "web";
   from: string;
   to: string;
 };
@@ -46,12 +44,10 @@ export const DEFAULT_THREAD_FILTERS: ThreadFilterState = {
   search: "",
   is_active: "",
   user_type: "",
-  has_ticket: "",
   has_feedback: "",
   feedback_rating: "",
   tags: [],
   handled_by: "",
-  channel: "",
   from: "",
   to: "",
 };
@@ -179,12 +175,10 @@ export default function ThreadFilteration({
     filters.search !== "" ||
     filters.is_active !== "" ||
     filters.user_type !== "" ||
-    filters.has_ticket !== "" ||
     filters.has_feedback !== "" ||
     filters.feedback_rating !== "" ||
     filters.tags.length > 0 ||
     filters.handled_by !== "" ||
-    filters.channel !== "" ||
     filters.from !== "" ||
     filters.to !== "";
 
@@ -226,22 +220,6 @@ export default function ThreadFilteration({
       />
 
       <FilterSelect
-        ariaLabel="Filter by support ticket"
-        value={filters.has_ticket}
-        onChange={(has_ticket) =>
-          onChange({
-            ...filters,
-            has_ticket: has_ticket as ThreadFilterState["has_ticket"],
-          })
-        }
-        options={[
-          { value: "", label: "All Tickets" },
-          { value: "true", label: "With Ticket" },
-          { value: "false", label: "Without Ticket" },
-        ]}
-      />
-
-      <FilterSelect
         ariaLabel="Filter by handled by"
         value={filters.handled_by}
         onChange={(handled_by) =>
@@ -254,22 +232,6 @@ export default function ThreadFilteration({
           { value: "", label: "All Handlers" },
           { value: "ai", label: "AI" },
           { value: "human", label: "Agent" },
-        ]}
-      />
-
-      <FilterSelect
-        ariaLabel="Filter by channel"
-        value={filters.channel}
-        onChange={(channel) =>
-          onChange({
-            ...filters,
-            channel: channel as ThreadFilterState["channel"],
-          })
-        }
-        options={[
-          { value: "", label: "All Channels" },
-          { value: "web", label: "Web" },
-          { value: "whatsapp", label: "WhatsApp" },
         ]}
       />
 

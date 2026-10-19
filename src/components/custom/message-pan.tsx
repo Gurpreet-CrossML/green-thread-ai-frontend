@@ -12,7 +12,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ReactMarkdown from "react-markdown";
 import { formatDateTime } from "@/lib/helpers";
 import { MessageAppear } from "@/components/custom/message-appear";
-import OrderBillCard from "@/components/custom/order-bill-card";
 import {
   Card,
   CardContent,
@@ -309,31 +308,7 @@ export default function MessagePan({
                         className={`p-3 text-sm wrap-break-word ${isCustomer ? "bg-primary text-primary-foreground rounded-tr-none" : "bg-secondary border border-border rounded-tl-none"}`}
                       >
                         {message.role === "assistant" ? (
-                          (() => {
-                            if (
-                              message?.json_content?.order_details &&
-                              message.json_content.order_details?.items
-                                ?.length > 0
-                            ) {
-                              return (
-                                <>
-                                  <ReactMarkdown>
-                                    {message.message}
-                                  </ReactMarkdown>
-                                  <div className="mt-3">
-                                    <OrderBillCard
-                                      order={message.json_content.order_details}
-                                    />
-                                  </div>
-                                </>
-                              );
-                            }
-
-                            // Strategy 2: plain markdown fallback
-                            return (
-                              <ReactMarkdown>{message.message}</ReactMarkdown>
-                            );
-                          })()
+                          <ReactMarkdown>{message.message}</ReactMarkdown>
                         ) : (
                           <span className="whitespace-pre-wrap">
                             {message.message}
@@ -402,7 +377,7 @@ export default function MessagePan({
                                         width={48}
                                         height={48}
                                         // Product images come from arbitrary, untrusted
-                                        // store hostnames (Magento/Shopify/etc.) we can't
+                                        // store hostnames we can't
                                         // enumerate. unoptimized renders a direct <img> so
                                         // we skip the remotePatterns allowlist and avoid
                                         // proxying third-party bandwidth through our optimizer.

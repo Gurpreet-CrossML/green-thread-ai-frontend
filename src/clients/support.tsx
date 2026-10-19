@@ -29,15 +29,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { CustomerAvatar } from "@/components/custom/customer-avatar";
 import { CustomerDetailsPanel } from "@/components/custom/customer-details-panel";
-import {
-  CrmLinkButton,
-  SessionFacts,
-} from "@/components/custom/customer-header";
-import {
-  CreateTicketDialog,
-  type TicketCustomer,
-} from "@/components/custom/create-ticket-dialog";
-import { LinkCustomerDialog } from "@/components/custom/link-customer-dialog";
+import { SessionFacts } from "@/components/custom/customer-header";
 import { MultiSelectCombobox } from "@/components/custom/multi-select-combobox";
 import { SearchInput } from "@/components/custom/search-input";
 import { CardTitle } from "@/components/ui/card";
@@ -45,23 +37,15 @@ import { Typography } from "@/components/ui/typography";
 import MessagePan from "@/components/custom/message-pan";
 import {
   FetchCart,
-  FetchFreshdeskTicketId,
   FetchThreadDetails,
   FetchThreads,
   CreateInternalNote,
-  ThreadCustomerLink,
   FetchUserMetadata,
   type Thread,
   type ThreadMessage,
   type HandlerEvent,
-  FetchOrders,
   UploadMessageAttachments,
 } from "@/redux/api-slice/thread-slice";
-import {
-  CreateSupportTicket,
-  FetchThreadTicketDraft,
-} from "@/redux/api-slice/support-ticket-slice";
-import { SyncCustomerOrders } from "@/redux/api-slice/order-slice";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -90,7 +74,6 @@ import {
   IconRobot,
   IconSend,
   IconShieldCheck,
-  IconTicket,
   IconX,
 } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
@@ -113,23 +96,16 @@ import {
 type ThreadWithReadState = Thread & { is_read?: boolean };
 type ThreadFilter = "needs_human" | "ai" | "with_agent" | "all";
 type SupportThreadFilters = {
-  channels: string[];
   assignees: string[];
 };
 
 function hasAppliedThreadFilters(filters: SupportThreadFilters) {
-  return filters.channels.length > 0 || filters.assignees.length > 0;
+  return filters.assignees.length > 0;
 }
 
 const EMPTY_SUPPORT_THREAD_FILTERS: SupportThreadFilters = {
-  channels: [],
   assignees: [],
 };
-
-const SUPPORT_CHANNEL_OPTIONS = [
-  { value: "web", label: "Web" },
-  { value: "whatsapp", label: "WhatsApp" },
-];
 
 // Message teasers render through react-markdown so formatting like **bold**
 // shows properly, but flattened to inline spans: block elements would break
@@ -876,21 +852,11 @@ export default function Support() {
   const { CreateInternalNoteIsLoading } = useAppSelector(
     (state) => state.GetThreadReducer.CreateInternalNoteState,
   );
-  const { FetchFreshdeskTicketIdData, FetchFreshdeskTicketIdIsLoading } =
-    useAppSelector(
-      (state) => state.GetThreadReducer.FetchFreshdeskTicketIdState,
-    );
   const { FetchCartData, FetchCartDataIsLoading } = useAppSelector(
     (state) => state.GetThreadReducer.FetchCartDataState,
   );
-  const { FetchOrderData, FetchOrderDataIsLoading } = useAppSelector(
-    (state) => state.GetThreadReducer.FetchOrderDataState,
-  );
   const { FetchUserMetadataData } = useAppSelector(
     (state) => state.GetThreadReducer.FetchUserMetadataState,
-  );
-  const { SyncCustomerOrdersIsLoading } = useAppSelector(
-    (state) => state.GetOrderReducer.SyncCustomerOrdersState,
   );
 
   const router = useRouter();
@@ -924,11 +890,6 @@ export default function Support() {
   const [isCustomerTyping, setIsCustomerTyping] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentUpload[]>([]);
 
-  // Attaching a real customer to a chat a guest started, offered from the
-  // conversation header where the guest's name sits.
-  const [isLinkCustomerOpen, setIsLinkCustomerOpen] = useState(false);
-  const [isCreateTicketOpen, setIsCreateTicketOpen] = useState(false);
-  const [isLinkingCustomer, setIsLinkingCustomer] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [threadSearch, setThreadSearch] = useState("");
   const [debouncedThreadSearch, setDebouncedThreadSearch] = useState("");
@@ -1105,7 +1066,7 @@ export default function Support() {
     desiredThreadId !== null &&
     filterScopedThreads.some((thread) => thread.id === desiredThreadId);
   // chat_thread.id is a uuid column, so anything else — a stale ?chat=
-  // value, a ticket number pasted into the URL — makes every thread-scoped
+  // value, or anything else pasted into the URL — makes every thread-scoped
   // query fail in Postgres and come back as a 500. Refusing it here turns
   // seven failing requests into none, and the screen falls back to "no
   // conversation selected" rather than a pane of broken cards.
@@ -1113,31 +1074,6 @@ export default function Support() {
     selectedThreadStillExists && UUID_PATTERN.test(desiredThreadId)
       ? desiredThreadId
       : null;
-
-  const handleLinkCustomer = async (customerId: number) => {
-    if (!storeCode || !activeThreadId) return;
-    setIsLinkingCustomer(true);
-    try {
-      const result = await dispatch(
-        ThreadCustomerLink({ storeCode, threadId: activeThreadId, customerId }),
-      );
-      if (ThreadCustomerLink.fulfilled.match(result)) {
-        setIsLinkCustomerOpen(false);
-        // The customer lives on the thread rows, so the list is what has to
-        // come back — the header and the panel both read identity from it.
-        dispatch(
-          FetchThreads({
-            store_code: storeCode,
-            page: 1,
-            limit: 50,
-            filters: { is_active: true },
-          }),
-        );
-      }
-    } finally {
-      setIsLinkingCustomer(false);
-    }
-  };
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -1262,11 +1198,8 @@ export default function Support() {
         filters: {
           is_active: true,
           // Resolved server-side so it can reach customer email, name and
-          // order ids — none of which are on the thread rows themselves.
+          // messages — none of which are on the thread rows themselves.
           ...(debouncedThreadSearch ? { search: debouncedThreadSearch } : {}),
-          ...(appliedThreadFilters.channels.length
-            ? { channel: appliedThreadFilters.channels }
-            : {}),
           ...(appliedThreadFilters.assignees.length
             ? { assignee: appliedThreadFilters.assignees }
             : {}),
@@ -1312,18 +1245,10 @@ export default function Support() {
       // conversation fired three requests whose responses were dropped.
       dispatch(FetchCart(activeThreadId));
       dispatch(FetchUserMetadata(activeThreadId));
-      dispatch(
-        FetchFreshdeskTicketId({
-          threadId: activeThreadId,
-          customerId: selectedThread?.customer?.id,
-          storeCode,
-        }),
-      );
-      dispatch(FetchOrders(activeThreadId));
     };
 
     loadThreadData();
-  }, [dispatch, activeThreadId, storeCode, selectedThread?.customer?.id]);
+  }, [dispatch, activeThreadId, storeCode]);
 
   const handleThreadMessageAdded = useCallback((message: ThreadMessage) => {
     setThreadMessages((prev) => [...prev, message]);
@@ -1785,9 +1710,7 @@ export default function Support() {
             currentThread?.need_escalation ??
             false,
         };
-        const hasAppliedFilters =
-          appliedThreadFilters.channels.length > 0 ||
-          appliedThreadFilters.assignees.length > 0;
+        const hasAppliedFilters = appliedThreadFilters.assignees.length > 0;
 
         if (hasAppliedFilters) {
           const projectedThreads = localThreads.map((thread) =>
@@ -2102,36 +2025,14 @@ export default function Support() {
     session?.user?.access_token,
   ]);
 
-  // Addressed by the customer, not the thread: syncing is a fact about a
-  // shopper's history, and the thread-scoped route resolved to this same
-  // customer before doing anything. A guest has none, so there is nothing
-  // to refresh — the button is disabled rather than failing on click.
-  const syncCustomerId = selectedThread?.customer?.id ?? null;
-
-  const handleOrdersSync = async () => {
-    if (!storeCode || !activeThreadId || !syncCustomerId) return;
-    try {
-      await dispatch(
-        SyncCustomerOrders({ storeCode, customerId: syncCustomerId }),
-      ).unwrap();
-
-      dispatch(FetchOrders(activeThreadId));
-      toast.success("Order Sync", {
-        description: "Orders synced successfully.",
-      });
-    } catch {
-      // The thunk has already said what went wrong.
-    }
-  };
-
   return (
     <SidebarProvider
       style={{ "--sidebar-width": "350px" } as CSSProperties}
       className="h-svh min-h-0 w-full overflow-hidden"
     >
       {/* Conversations list — the nested sidebar from the sidebar-09 block. */}
-      {/* The list panel is content, not chrome: white like Help Desk's
-          ticket list, with the same 4rem header over a controls strip. Only
+      {/* The list panel is content, not chrome: white, with a 4rem header
+          over a controls strip. Only
           the app's own navigation stays on the grey sidebar surface. */}
       <Sidebar
         collapsible="none"
@@ -2154,7 +2055,7 @@ export default function Support() {
                 <SearchInput
                   value={threadSearch}
                   onChange={setThreadSearch}
-                  placeholder="Search name, message or order ID…"
+                  placeholder="Search name, email or message…"
                   label="Search conversations"
                 />
               </div>
@@ -2164,7 +2065,6 @@ export default function Support() {
                   setIsThreadFilterOpen(open);
                   if (open) {
                     setDraftThreadFilters({
-                      channels: [...appliedThreadFilters.channels],
                       assignees: [...appliedThreadFilters.assignees],
                     });
                   }
@@ -2178,12 +2078,9 @@ export default function Support() {
                     aria-label="Filter conversations"
                   >
                     <IconFilter className="size-4" />
-                    {appliedThreadFilters.channels.length +
-                      appliedThreadFilters.assignees.length >
-                    0 ? (
+                    {appliedThreadFilters.assignees.length > 0 ? (
                       <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                        {appliedThreadFilters.channels.length +
-                          appliedThreadFilters.assignees.length}
+                        {appliedThreadFilters.assignees.length}
                       </span>
                     ) : null}
                   </Button>
@@ -2193,26 +2090,6 @@ export default function Support() {
                     <CardTitle>Filter Conversations</CardTitle>
                   </div>
                   <div className="space-y-5 p-4">
-                    <fieldset>
-                      <legend className="mb-2">
-                        <Typography variant="small" as="span">
-                          Channel
-                        </Typography>
-                      </legend>
-                      <MultiSelectCombobox
-                        options={SUPPORT_CHANNEL_OPTIONS}
-                        value={draftThreadFilters.channels}
-                        onValueChange={(channels) =>
-                          setDraftThreadFilters((current) => ({
-                            ...current,
-                            channels,
-                          }))
-                        }
-                        placeholder="Search channels…"
-                        emptyMessage="No channels found."
-                      />
-                    </fieldset>
-
                     <fieldset>
                       <legend className="mb-2">
                         <Typography variant="small" as="span">
@@ -2237,9 +2114,7 @@ export default function Support() {
                     </fieldset>
                   </div>
                   <div className="flex justify-between border-t p-3">
-                    {appliedThreadFilters.channels.length +
-                      appliedThreadFilters.assignees.length >
-                    0 ? (
+                    {appliedThreadFilters.assignees.length > 0 ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -2259,7 +2134,6 @@ export default function Support() {
                       size="sm"
                       onClick={() => {
                         setAppliedThreadFilters({
-                          channels: [...draftThreadFilters.channels],
                           assignees: [...draftThreadFilters.assignees],
                         });
                         setHasManualTabSelection(false);
@@ -2341,8 +2215,6 @@ export default function Support() {
               ) : filteredThreads.length ? (
                 filteredThreads.map((thread: ThreadWithReadState) => {
                   const isUnread = thread.is_read === false;
-                  const isWhatsapp = thread.source === "whatsapp";
-                  const channelLabel = isWhatsapp ? "WhatsApp" : "Web";
                   const handlerLabel =
                     thread.chat_handler === "human"
                       ? thread.chat_handler_user?.email?.toLowerCase() ===
@@ -2389,12 +2261,6 @@ export default function Support() {
                       previewLines={1}
                       footer={
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Badge
-                            variant="secondary"
-                            className="h-5 rounded-md px-1.5 text-xs font-normal"
-                          >
-                            {channelLabel}
-                          </Badge>
                           <Badge
                             variant="secondary"
                             className="h-5 rounded-md px-1.5 text-xs font-normal"
@@ -2470,14 +2336,6 @@ export default function Support() {
                             selectedThread?.customer?.email ||
                             "Guest"}
                         </CardTitle>
-                        <CrmLinkButton
-                          customerId={selectedThread?.customer?.id}
-                          onLinkCustomer={
-                            activeThreadId
-                              ? () => setIsLinkCustomerOpen(true)
-                              : undefined
-                          }
-                        />
                       </div>
                       {/* Email rather than a status line: who you are
                           talking to is what an agent needs from a header,
@@ -2495,17 +2353,8 @@ export default function Support() {
 
                   <div className="flex shrink-0 items-center gap-3">
                     {/* Where they are browsing from, beside who they are —
-                        context for the person already on screen, and three
-                        rows the details pane gets back for orders. */}
+                        context for the person already on screen. */}
                     <SessionFacts userMetadata={FetchUserMetadataData} />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsCreateTicketOpen(true)}
-                    >
-                      <IconTicket className="size-4" />
-                      Create Ticket
-                    </Button>
                   </div>
                 </div>
               </header>
@@ -2610,15 +2459,6 @@ export default function Support() {
             </div>
 
             <CustomerDetailsPanel
-              customerData={selectedThread?.customer || null}
-              orders={FetchOrderData}
-              ordersLoading={FetchOrderDataIsLoading}
-              onOrdersSync={handleOrdersSync}
-              orderSyncLoading={SyncCustomerOrdersIsLoading}
-              tickets={{
-                data: FetchFreshdeskTicketIdData ?? [],
-                loading: FetchFreshdeskTicketIdIsLoading,
-              }}
               cart={{ data: FetchCartData, loading: FetchCartDataIsLoading }}
             />
           </div>
@@ -2634,76 +2474,6 @@ export default function Support() {
           </div>
         )}
       </SidebarInset>
-      {storeCode ? (
-        <CreateTicketDialog
-          open={isCreateTicketOpen}
-          onOpenChange={setIsCreateTicketOpen}
-          storeCode={storeCode}
-          // Seeded from the conversation on screen: the shopper is already
-          // known here, and making the agent search for them again is the
-          // retyping this dialog exists to remove.
-          initialCustomer={
-            selectedThread?.customer?.id
-              ? ({
-                  kind: "record",
-                  id: selectedThread.customer.id,
-                  name: selectedThread.customer.name,
-                  email: selectedThread.customer.email,
-                } satisfies TicketCustomer)
-              : selectedThread?.customer?.email
-                ? ({
-                    kind: "email",
-                    email: selectedThread.customer.email,
-                  } satisfies TicketCustomer)
-                : null
-          }
-          onDraft={async () => {
-            if (!activeThreadId) return null;
-            const result = await dispatch(
-              FetchThreadTicketDraft({
-                storeCode,
-                threadId: activeThreadId,
-              }),
-            );
-            return FetchThreadTicketDraft.fulfilled.match(result)
-              ? result.payload
-              : null;
-          }}
-          // Addressed by the open thread, which the backend stores on the
-          // ticket — so the conversation that produced it stays reachable
-          // from the help desk.
-          onSubmit={async (payload) => {
-            if (!activeThreadId) return { ok: false };
-            const result = await dispatch(
-              CreateSupportTicket({
-                storeCode,
-                threadId: activeThreadId,
-                payload,
-              }),
-            );
-            const ok = CreateSupportTicket.fulfilled.match(result);
-            if (ok) {
-              dispatch(
-                FetchFreshdeskTicketId({
-                  threadId: activeThreadId,
-                  customerId: selectedThread?.customer?.id,
-                  storeCode,
-                }),
-              );
-            }
-            return ok ? { ok: true } : { ok: false, payload: result.payload };
-          }}
-        />
-      ) : null}
-      {storeCode ? (
-        <LinkCustomerDialog
-          open={isLinkCustomerOpen}
-          onOpenChange={setIsLinkCustomerOpen}
-          storeCode={storeCode}
-          linking={isLinkingCustomer}
-          onLink={(customer) => handleLinkCustomer(customer.id)}
-        />
-      ) : null}
     </SidebarProvider>
   );
 }

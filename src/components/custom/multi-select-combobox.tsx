@@ -15,10 +15,6 @@ import {
 
 /**
  * Pick several of something, as chips in one field.
- *
- * Lifted out of the help desk when the create-ticket dialog needed the
- * same tag picker: two copies would have drifted the moment one of them
- * gained paging or a different empty state.
  */
 export function MultiSelectCombobox({
   options,

@@ -8,10 +8,8 @@ import {
   chatHistory,
   aiInsights,
   chatbotFeedback,
-  supportTicket,
   userMetadata,
   sessionResolutionVerdict,
-  chatCustomerorder,
   chatThreadAssignment,
   authUser,
 } from "@/lib/drizzle/schema";
@@ -30,11 +28,6 @@ import {
   sql,
   SQL,
 } from "drizzle-orm";
-import {
-  OrderData,
-  OrderItemData,
-  OrderShippingAddress,
-} from "@/redux/api-slice/thread-slice";
 
 /**
  * Filters accepted by the thread list endpoint, mirroring
@@ -47,12 +40,10 @@ export type ListThreadsFilters = {
   is_active?: string;
   search?: string;
   user_type?: string;
-  has_ticket?: string;
   has_feedback?: string;
   feedback_rating?: string; // very_bad | bad | neutral | good | excellent
   tags?: string[]; // matches threads tagged with ANY of the given tags
   handled_by?: string; // ai | human
-  channel?: string[]; // whatsapp | web (native/webhook)
   assignee?: string[]; // auth.User email values
   need_escalation?: string;
 };
@@ -213,13 +204,6 @@ export async function list_threads(
       // The customer's own name, which is stored split across two columns
       // and so isn't covered by the thread name above.
       sql`concat_ws(' ', ${chatCustomer.firstName}, ${chatCustomer.lastName}) ILIKE ${`%${search}%`}`,
-      // Orders hang off the customer, not the thread, so match with an
-      // EXISTS rather than joining and multiplying the thread rows.
-      sql`EXISTS (
-        SELECT 1 FROM ${chatCustomerorder} o
-        WHERE o.customer_id = ${chatThread.customerId}
-          AND (o.order_number ILIKE ${`%${search}%`} OR o.order_id ILIKE ${`%${search}%`})
-      )`,
     ];
     if (isValidUuid(search)) {
       searchConditions.push(eq(chatThread.id, search));
@@ -238,41 +222,13 @@ export async function list_threads(
     conditions.push(eq(chatThread.chatHandler, filters.handled_by));
   }
 
-  // Channel mirrors the UI's derivation: WhatsApp, or Web for everything else.
-  if (filters.channel?.length) {
-    const channelConditions = filters.channel.flatMap((channel) => {
-      if (channel === "whatsapp") {
-        return [eq(chatThread.source, "whatsapp")];
-      }
-      if (channel === "web") {
-        return [
-          sql`(${chatThread.source} IS NULL OR ${chatThread.source} <> 'whatsapp')`,
-        ];
-      }
-      return [];
-    });
-    const combinedChannels = or(...channelConditions);
-    if (combinedChannels) conditions.push(combinedChannels);
-  }
-
   if (filters.assignee?.length) {
     conditions.push(inArray(authUser.email, filters.assignee));
   }
 
-  // has_ticket / has_feedback are correlated EXISTS subqueries (Django uses
-  // support_tickets__isnull / feedbacks__isnull with .distinct()).
-  if (filters.has_ticket === "true") {
-    conditions.push(
-      sql`EXISTS (SELECT 1 FROM ${supportTicket} WHERE ${supportTicket.threadId} = ${chatThread.id})`,
-    );
-  } else if (filters.has_ticket === "false") {
-    conditions.push(
-      sql`NOT EXISTS (SELECT 1 FROM ${supportTicket} WHERE ${supportTicket.threadId} = ${chatThread.id})`,
-    );
-  }
-
-  // A rating narrows has_feedback to a specific rating; otherwise has_feedback
-  // is the plain existence check.
+  // has_feedback is a correlated EXISTS subquery (Django uses
+  // feedbacks__isnull with .distinct()). A rating narrows it to a specific
+  // rating; otherwise it is the plain existence check.
   if (
     filters.feedback_rating &&
     (FEEDBACK_RATING_VALUES as readonly string[]).includes(
@@ -445,7 +401,7 @@ export async function list_threads(
       need_escalation: row.need_escalation,
       escalation_time: row.escalation_time,
       customer: {
-        // Null for a guest — the UI keys its tickets lookup off this.
+        // Null for a guest.
         id: row.customer_id ?? null,
         name: hasCustomer ? customerName : null,
         email: row.customer_email,
@@ -530,7 +486,7 @@ export type ThreadDetail =
       last_message_at: string | null;
       customer_name: string | null;
       customer_email: string | null;
-      /** Identity only — enough to link the thread to its Catalog record. */
+      /** Identity only; null for a guest. */
       customer: { id: number } | null;
       verdict: {
         verdict: string;
@@ -947,51 +903,4 @@ export async function get_user_metadata(
 
   if (rows.length === 0) return null;
   return { ...rows[0], id: Number(rows[0].id) };
-}
-
-export async function get_order_data(thread_id: string): Promise<OrderData[]> {
-  const db = getDb();
-
-  const thread = await db
-    .select({ customerId: chatThread.customerId })
-    .from(chatThread)
-    .where(eq(chatThread.id, thread_id))
-    .then((rows) => rows[0]);
-
-  if (!thread?.customerId) {
-    return [];
-  }
-
-  const orderRows = await db
-    .select({
-      id: chatCustomerorder.id,
-      order_id: chatCustomerorder.orderId,
-      order_number: chatCustomerorder.orderNumber,
-      created_at: chatCustomerorder.createdAt,
-      total_price: chatCustomerorder.totalPrice,
-      financial_status: chatCustomerorder.financialStatus,
-      fulfillment_status: chatCustomerorder.fulfillmentStatus,
-      gateway: chatCustomerorder.gateway,
-      shipping_address: chatCustomerorder.shippingAddress,
-      currency: chatCustomerorder.currency,
-      items: chatCustomerorder.items,
-      subtotal_price: chatCustomerorder.subtotalPrice,
-      total_tax: chatCustomerorder.totalTax,
-      total_shipping: chatCustomerorder.totalShipping,
-      total_discounts: chatCustomerorder.totalDiscounts,
-      shipping_method: chatCustomerorder.shippingMethod,
-    })
-    .from(chatCustomerorder)
-    .where(eq(chatCustomerorder.customerId, thread.customerId))
-    .orderBy(desc(chatCustomerorder.createdAt));
-
-  if (orderRows.length === 0) {
-    return [];
-  }
-
-  return orderRows.map((row) => ({
-    ...row,
-    shipping_address: row.shipping_address as OrderShippingAddress,
-    items: row.items as OrderItemData[],
-  }));
 }

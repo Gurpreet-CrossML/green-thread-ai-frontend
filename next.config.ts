@@ -34,12 +34,6 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "cdn.shopify.com",
-        port: "",
-        pathname: "/s/files/**",
-      },
-      {
-        protocol: "https",
         hostname: "store-signals-ai-dev-s3.s3.amazonaws.com",
         port: "",
         pathname: "/**",

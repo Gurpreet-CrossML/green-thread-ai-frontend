@@ -12,16 +12,12 @@ export type StaffRole =
   | "admin"
   | "supervisor"
   | "agent"
-  | "content_manager"
   | "viewer";
 
 /** Permission keys (Django `tenancy.roles.ROLE_PERMISSIONS`). */
 export type Permission =
   | "conversations"
-  | "copilot"
-  | "knowledge"
   | "team_metrics"
-  | "ticket_tags"
   | "reassignment"
   | "open";
 
@@ -43,7 +39,4 @@ export type Identity = {
   permissions: PermissionMap;
   /** Every store in the company. */
   accessible_stores: AccessibleStore[];
-  /** Present when the profile endpoint reports onboarding (login always does). */
-  onboarding_pending?: boolean;
-  onboarding_step?: string | null;
 };

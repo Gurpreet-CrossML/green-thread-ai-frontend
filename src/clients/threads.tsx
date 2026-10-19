@@ -21,9 +21,7 @@ import ThreadFilteration, {
 const THREAD_FILTER_KEYS = [
   "search",
   "is_active",
-  "has_ticket",
   "handled_by",
-  "channel",
   "from",
   "to",
 ] as const;
@@ -117,13 +115,10 @@ export default function Threads() {
     storeCode,
     debouncedSearch,
     filters.is_active,
-
-    filters.has_ticket,
     filters.has_feedback,
     filters.feedback_rating,
     filters.tags,
     filters.handled_by,
-    filters.channel,
     filters.from,
     filters.to,
   ]);
@@ -143,9 +138,6 @@ export default function Threads() {
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
       ...(filters.is_active ? { is_active: filters.is_active === "true" } : {}),
       ...(filters.user_type ? { user_type: filters.user_type } : {}),
-      ...(filters.has_ticket
-        ? { has_ticket: filters.has_ticket === "true" }
-        : {}),
       ...(filters.has_feedback
         ? { has_feedback: filters.has_feedback === "true" }
         : {}),
@@ -154,7 +146,6 @@ export default function Threads() {
         : {}),
       ...(filters.tags.length ? { tags: filters.tags } : {}),
       ...(filters.handled_by ? { handled_by: filters.handled_by } : {}),
-      ...(filters.channel ? { channel: filters.channel } : {}),
       ...(filters.from ? { from: filters.from } : {}),
       ...(filters.to ? { to: filters.to } : {}),
     };
@@ -174,12 +165,10 @@ export default function Threads() {
     debouncedSearch,
     filters.is_active,
     filters.user_type,
-    filters.has_ticket,
     filters.has_feedback,
     filters.feedback_rating,
     filters.tags,
     filters.handled_by,
-    filters.channel,
     filters.from,
     filters.to,
   ]);
