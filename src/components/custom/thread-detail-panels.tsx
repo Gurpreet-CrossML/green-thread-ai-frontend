@@ -3,7 +3,10 @@
 import { LoadingState } from "@/components/custom/loading-state";
 import { CardTitle } from "@/components/ui/card";
 import { Typography } from "@/components/ui/typography";
-import type { CartDataResponse, CartData } from "@/redux/api-slice/thread-slice";
+import type {
+  CartDataResponse,
+  CartData,
+} from "@/redux/api-slice/thread-slice";
 import { IconShoppingBag } from "@tabler/icons-react";
 
 function CardLoadingState() {

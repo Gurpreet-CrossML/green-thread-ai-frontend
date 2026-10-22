@@ -128,44 +128,47 @@ export async function get_feedback_insights(params: {
   // counts collapse into a single GROUP BY.
   const [totalRows, totalFbRows, ratingRows, fcrRows, ahtRows, analyses] =
     await runSequentially([
-    db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(chatThread)
-      .where(threadWhere),
-    db
-      .select({ totalFb: sql<number>`count(*)::int` })
-      .from(chatbotFeedback)
-      .where(fbWhere),
-    db
-      .select({ rating: chatbotFeedback.rating, c: sql<number>`count(*)::int` })
-      .from(chatbotFeedback)
-      .where(fbWhere)
-      .groupBy(chatbotFeedback.rating),
-    db
-      .select({ fcr: sql<number>`count(*)::int` })
-      .from(sentimentAnalysis)
-      .where(
-        and(
-          sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`,
-          gt(sentimentAnalysis.totalQueries, 0),
-          sql`${sentimentAnalysis.totalQueries} = ${sentimentAnalysis.resolvedQueries}`,
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(chatThread)
+        .where(threadWhere),
+      db
+        .select({ totalFb: sql<number>`count(*)::int` })
+        .from(chatbotFeedback)
+        .where(fbWhere),
+      db
+        .select({
+          rating: chatbotFeedback.rating,
+          c: sql<number>`count(*)::int`,
+        })
+        .from(chatbotFeedback)
+        .where(fbWhere)
+        .groupBy(chatbotFeedback.rating),
+      db
+        .select({ fcr: sql<number>`count(*)::int` })
+        .from(sentimentAnalysis)
+        .where(
+          and(
+            sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`,
+            gt(sentimentAnalysis.totalQueries, 0),
+            sql`${sentimentAnalysis.totalQueries} = ${sentimentAnalysis.resolvedQueries}`,
+          ),
         ),
-      ),
-    db
-      .select({
-        seconds: sql<number>`EXTRACT(EPOCH FROM (MAX(${chatHistory.createdAt}) - MIN(${chatHistory.createdAt})))`,
-      })
-      .from(chatHistory)
-      .where(sql`${chatHistory.threadId} IN ${threadSubquery}`)
-      .groupBy(chatHistory.threadId),
-    db
-      .select({
-        totalQueries: sentimentAnalysis.totalQueries,
-        unresolvedQueries: sentimentAnalysis.unresolvedQueries,
-      })
-      .from(sentimentAnalysis)
-      .where(sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`),
-  ]);
+      db
+        .select({
+          seconds: sql<number>`EXTRACT(EPOCH FROM (MAX(${chatHistory.createdAt}) - MIN(${chatHistory.createdAt})))`,
+        })
+        .from(chatHistory)
+        .where(sql`${chatHistory.threadId} IN ${threadSubquery}`)
+        .groupBy(chatHistory.threadId),
+      db
+        .select({
+          totalQueries: sentimentAnalysis.totalQueries,
+          unresolvedQueries: sentimentAnalysis.unresolvedQueries,
+        })
+        .from(sentimentAnalysis)
+        .where(sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`),
+    ]);
 
   const totalThreads = Number(totalRows[0].total);
   const totalFeedbacks = Number(totalFbRows[0].totalFb);
@@ -257,9 +260,7 @@ export async function get_feedback_insights(params: {
   };
 
   const cesValues = analyses.map((a) =>
-    normalizeEffort(
-      Number(a.totalQueries) + Number(a.unresolvedQueries) * 2,
-    ),
+    normalizeEffort(Number(a.totalQueries) + Number(a.unresolvedQueries) * 2),
   );
   const avgCes = cesValues.length
     ? round2(cesValues.reduce((s, v) => s + v, 0) / cesValues.length)

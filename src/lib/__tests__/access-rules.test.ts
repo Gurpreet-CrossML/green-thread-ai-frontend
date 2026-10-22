@@ -88,9 +88,7 @@ describe("can — role permissions from Django", () => {
 
   it("company admin may do everything, including admin-only screens", () => {
     expect(can({ is_staff: true }, undefined, { write: true })).toBe(true);
-    expect(can({ is_staff: true }, "team_metrics", { write: true })).toBe(
-      true,
-    );
+    expect(can({ is_staff: true }, "team_metrics", { write: true })).toBe(true);
   });
 
   it("staff never reach admin-only (undefined) permissions", () => {
