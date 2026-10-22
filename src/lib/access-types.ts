@@ -8,11 +8,7 @@
 export type AccessibleStore = { code: string };
 
 /** Staff roles (Django `CompanyMembership.Role`); a company admin is `admin`. */
-export type StaffRole =
-  | "admin"
-  | "supervisor"
-  | "agent"
-  | "viewer";
+export type StaffRole = "admin" | "supervisor" | "agent" | "viewer";
 
 /** Permission keys (Django `tenancy.roles.ROLE_PERMISSIONS`). */
 export type Permission =

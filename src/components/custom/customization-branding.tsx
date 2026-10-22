@@ -151,10 +151,10 @@ export default function CustomizationBranding({
           <div className="flex flex-col gap-1">
             <FieldLabel htmlFor="greeting-message">Greeting Message</FieldLabel>
             <FieldDescription>
-              The first message the chatbot sends when the chat opens. It
-              starts as the widget&apos;s own greeting: keep it unchanged and
-              each visitor sees it in their language; edit it and everyone sees
-              your text.
+              The first message the chatbot sends when the chat opens. It starts
+              as the widget&apos;s own greeting: keep it unchanged and each
+              visitor sees it in their language; edit it and everyone sees your
+              text.
             </FieldDescription>
           </div>
           <CKEditorTextArea

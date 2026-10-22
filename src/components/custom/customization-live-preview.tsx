@@ -129,8 +129,8 @@ export default function CustomizationLivePreview({
                 style={{ background: bubbleColor }}
               >
                 I found the factory size for your Toyota Corolla 2019:{" "}
-                <strong>205/55 R16</strong>. Shall I search for summer tyres
-                in this size?
+                <strong>205/55 R16</strong>. Shall I search for summer tyres in
+                this size?
               </div>
               <span className="text-[11px] text-[#6b7280]">
                 AI Agent • 15:21

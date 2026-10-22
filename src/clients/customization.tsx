@@ -20,10 +20,7 @@ import {
 } from "@/redux/api-slice/customization-slice";
 import { darken, getReadableText, mix, normalizeHex } from "@/lib/color";
 import { isValidUrl, normalizeUrl } from "@/lib/url";
-import {
-  applyServerFieldErrors,
-  formikErrorsFromZod,
-} from "@/lib/form-errors";
+import { applyServerFieldErrors, formikErrorsFromZod } from "@/lib/form-errors";
 import CustomizationTheme from "@/components/custom/customization-theme";
 import CustomizationBranding from "@/components/custom/customization-branding";
 import CustomizationLivePreview from "@/components/custom/customization-live-preview";

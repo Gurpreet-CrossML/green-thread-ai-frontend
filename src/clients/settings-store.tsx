@@ -116,7 +116,6 @@ export default function SettingsStore() {
         store={scriptTarget}
         onOpenChange={(open) => !open && setScriptTarget(null)}
       />
-
     </div>
   );
 }
