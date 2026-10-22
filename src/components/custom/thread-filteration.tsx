@@ -1,0 +1,281 @@
+"use client";
+
+import { IconSearch, IconX } from "@tabler/icons-react";
+
+import { DateRangePicker } from "@/components/custom/date-range-picker";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxValue,
+  useComboboxAnchor,
+} from "@/components/ui/combobox";
+import { FEEDBACK_RATINGS, type FeedbackRatingValue } from "@/lib/config";
+
+export type FeedbackRating = "" | FeedbackRatingValue;
+
+export type ThreadFilterState = {
+  search: string;
+  is_active: "" | "true" | "false";
+  user_type: "" | "guest" | "logged_in";
+  has_feedback: "" | "true" | "false";
+  feedback_rating: FeedbackRating;
+  tags: string[];
+  handled_by: "" | "ai" | "human";
+  from: string;
+  to: string;
+};
+
+export const DEFAULT_THREAD_FILTERS: ThreadFilterState = {
+  search: "",
+  is_active: "",
+  user_type: "",
+  has_feedback: "",
+  feedback_rating: "",
+  tags: [],
+  handled_by: "",
+  from: "",
+  to: "",
+};
+
+type ThreadFilterationProps = {
+  filters: ThreadFilterState;
+  onChange: (filters: ThreadFilterState) => void;
+  onClear: () => void;
+  tagOptions: string[];
+  isLoadingTagOptions?: boolean;
+};
+
+// Radix Select forbids empty-string item values, so "All" uses a sentinel
+// that maps back to "" (filter off) in state.
+const ALL = "all";
+const ALL_TAGS = "__all_tags__";
+
+function FilterSelect({
+  ariaLabel,
+  value,
+  onChange,
+  options,
+}: {
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <Select
+      value={value || ALL}
+      onValueChange={(next) => onChange(next === ALL ? "" : next)}
+    >
+      <SelectTrigger size="sm" aria-label={ariaLabel} className="w-fit">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value || ALL} value={option.value || ALL}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// Multi-select combobox for an "any of the selected values" filter. Filtering
+// happens server-side; this just lets the user build the selection. Options
+// are plain strings (the filter value); `labelFor` maps a value to its
+// display text when that differs (e.g. workflow slugs -> readable labels).
+function MultiSelectFilter({
+  options,
+  value,
+  onChange,
+  labelFor = (option) => option,
+  placeholder,
+  emptyText,
+  isLoading,
+}: {
+  options: string[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  labelFor?: (option: string) => string;
+  placeholder: string;
+  emptyText: string;
+  isLoading?: boolean;
+}) {
+  const anchor = useComboboxAnchor();
+  // An empty selection means "no tag filter", shown as a checked "All Tags"
+  // entry. Picking it clears the tags; picking a tag unchecks it.
+  const allChecked = value.length === 0;
+
+  return (
+    <Combobox
+      multiple
+      autoHighlight
+      items={options.length ? [ALL_TAGS, ...options] : []}
+      value={allChecked ? [ALL_TAGS] : value}
+      onValueChange={(next: string[]) => {
+        if (next.includes(ALL_TAGS) && !allChecked) return onChange([]);
+        onChange(next.filter((item) => item !== ALL_TAGS));
+      }}
+    >
+      <ComboboxChips ref={anchor} className="w-56">
+        <ComboboxValue>
+          {(selected) => (
+            <>
+              {(selected as string[])
+                .filter((item) => item !== ALL_TAGS)
+                .map((item) => (
+                  <ComboboxChip key={item}>{labelFor(item)}</ComboboxChip>
+                ))}
+              <ComboboxChipsInput
+                placeholder={
+                  value.length ? "" : isLoading ? "Loading…" : placeholder
+                }
+              />
+            </>
+          )}
+        </ComboboxValue>
+      </ComboboxChips>
+      <ComboboxContent anchor={anchor}>
+        <ComboboxEmpty>{isLoading ? "Loading…" : emptyText}</ComboboxEmpty>
+        <ComboboxList>
+          {(item) => (
+            <ComboboxItem key={item} value={item}>
+              {item === ALL_TAGS ? "All Tags" : labelFor(item)}
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
+  );
+}
+
+export default function ThreadFilteration({
+  filters,
+  onChange,
+  onClear,
+  tagOptions,
+  isLoadingTagOptions,
+}: ThreadFilterationProps) {
+  const hasActiveFilters =
+    filters.search !== "" ||
+    filters.is_active !== "" ||
+    filters.user_type !== "" ||
+    filters.has_feedback !== "" ||
+    filters.feedback_rating !== "" ||
+    filters.tags.length > 0 ||
+    filters.handled_by !== "" ||
+    filters.from !== "" ||
+    filters.to !== "";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-56 flex-1">
+        <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={filters.search}
+          onChange={(event) =>
+            onChange({ ...filters, search: event.target.value })
+          }
+          placeholder="Search name, email, messages…"
+          className="pl-8"
+        />
+      </div>
+
+      <DateRangePicker
+        from={filters.from}
+        to={filters.to}
+        onRangeChange={(from, to) => onChange({ ...filters, from, to })}
+        disabled={{ after: new Date() }}
+      />
+
+      <FilterSelect
+        ariaLabel="Filter by status"
+        value={filters.is_active}
+        onChange={(is_active) =>
+          onChange({
+            ...filters,
+            is_active: is_active as ThreadFilterState["is_active"],
+          })
+        }
+        options={[
+          { value: "", label: "All Statuses" },
+          { value: "true", label: "Active" },
+          { value: "false", label: "Closed" },
+        ]}
+      />
+
+      <FilterSelect
+        ariaLabel="Filter by handled by"
+        value={filters.handled_by}
+        onChange={(handled_by) =>
+          onChange({
+            ...filters,
+            handled_by: handled_by as ThreadFilterState["handled_by"],
+          })
+        }
+        options={[
+          { value: "", label: "All Handlers" },
+          { value: "ai", label: "AI" },
+          { value: "human", label: "Agent" },
+        ]}
+      />
+
+      <MultiSelectFilter
+        options={tagOptions}
+        value={filters.tags}
+        onChange={(tags) => onChange({ ...filters, tags })}
+        placeholder="All Tags"
+        emptyText="No tags found."
+        isLoading={isLoadingTagOptions}
+      />
+
+      {filters.has_feedback === "true" && (
+        <FilterSelect
+          ariaLabel="Filter by feedback rating"
+          value={filters.feedback_rating}
+          onChange={(feedback_rating) =>
+            onChange({
+              ...filters,
+              feedback_rating: feedback_rating as FeedbackRating,
+            })
+          }
+          options={[
+            { value: "", label: "All Ratings" },
+            ...FEEDBACK_RATINGS.map((rating) => ({
+              value: rating.value,
+              label: rating.label,
+            })),
+          ]}
+        />
+      )}
+
+      {hasActiveFilters && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground"
+          onClick={onClear}
+        >
+          <IconX />
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+}
