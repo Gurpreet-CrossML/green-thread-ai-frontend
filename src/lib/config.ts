@@ -100,10 +100,6 @@ export const ENDPOINTS = {
     `/analytics/threads/${threadId}/ai-insights`,
   fetchCartData: (threadId: string) =>
     `/analytics/threads/${threadId}/cart-data`,
-
-  // Chatbot Customization (Django via useBackend — keep trailing slash).
-  widgetCustomization: (storeId: number) =>
-    `/store/widget-customization/${storeId}/`,
 };
 
 // Default page size, mirroring DRF's PageNumberPagination.page_size.
