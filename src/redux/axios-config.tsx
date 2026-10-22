@@ -3,7 +3,7 @@ import axios from "axios";
 import { getSession, signOut } from "next-auth/react";
 
 // Let an individual request force the Django backend even for a GET — used by
-// reads that are NOT ported to the Next.js API (e.g. widget customization).
+// reads that are NOT ported to the Next.js API (e.g. the company profile).
 declare module "axios" {
   export interface AxiosRequestConfig {
     useBackend?: boolean;

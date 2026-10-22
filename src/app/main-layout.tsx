@@ -84,10 +84,9 @@ export default function MainLayout({
           // Literal values: the rail keeps 3.5rem, and the collapsed
           // sidebar grows by the sub-sidebar's width when one is open.
           //
-          // 14rem, not 16: the longest label in any area is "Widget
-          // Customisation" at roughly 12.5rem including its icon and
-          // padding, so the extra two were empty gutter on every screen —
-          // and the panes that matter are to the right of it.
+          // 14rem, not 16: every area label fits well inside it with its
+          // icon and padding, so the extra two were empty gutter on every
+          // screen — and the panes that matter are to the right of it.
           "--sidebar-width-icon":
             hasSubSidebar && !subSidebarHidden
               ? "calc(3.5rem + 14rem)"

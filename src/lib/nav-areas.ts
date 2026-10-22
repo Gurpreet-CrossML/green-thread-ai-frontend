@@ -3,7 +3,6 @@ import type { ComponentType } from "react";
 import {
   IconBuildingSkyscraper,
   IconBuildingStore,
-  IconImageGeneration,
   IconSettings,
   type Icon,
 } from "@tabler/icons-react";
@@ -69,15 +68,6 @@ export const NAV_AREAS = {
         pageDescription:
           "Every store connected to your company. Switch which one the dashboard works on, get its widget script, or limit its widget to specific IPs.",
         icon: IconBuildingStore,
-      },
-      {
-        href: "/settings/customisation",
-        title: "Widget Customisation",
-        description:
-          "Colors, logo, messages, and quick links for the chat widget.",
-        pageDescription:
-          "How the chat widget looks on your storefront — colors, branding, messages, and quick links.",
-        icon: IconImageGeneration,
       },
     ],
   },
