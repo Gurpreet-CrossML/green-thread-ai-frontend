@@ -1,0 +1,272 @@
+import CredentialsProvider from "next-auth/providers/credentials";
+import NextAuth from "next-auth/next";
+import type { AuthOptions } from "next-auth";
+import type { JWT } from "next-auth/jwt";
+import jwt from "jsonwebtoken";
+import { ENDPOINTS } from "@/lib/config";
+import { refreshIdentity } from "@/lib/session-verify";
+import type {
+  AccessibleStore,
+  PermissionMap,
+  StaffRole,
+} from "@/lib/access-types";
+
+declare module "next-auth" {
+  interface User {
+    token?: string;
+    refresh?: string;
+    email?: string;
+    username?: string;
+    name?: string;
+    // Tenancy/identity from the Django login `data` (see account/serializers.py).
+    company_code?: string | null;
+    is_staff?: boolean;
+    role?: StaffRole | null;
+    permissions?: PermissionMap;
+    accessible_stores?: AccessibleStore[];
+  }
+  interface Session {
+    user: {
+      email?: string | null;
+      username?: string;
+      name?: string | null;
+      access_token?: string;
+      // Company + access (read by withSessionRoute and the UI gates).
+      company_code?: string | null;
+      is_staff?: boolean;
+      role?: StaffRole | null;
+      permissions?: PermissionMap;
+      accessible_stores?: AccessibleStore[];
+    };
+    // Propagated from the JWT when a token refresh fails, so the client can
+    // prompt re-authentication.
+    error?: string;
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    access_token?: string;
+    refresh_token?: string;
+    accessTokenExpires?: number;
+    email?: string;
+    username?: string;
+    name?: string;
+    company_code?: string | null;
+    is_staff?: boolean;
+    role?: StaffRole | null;
+    permissions?: PermissionMap;
+    accessible_stores?: AccessibleStore[];
+    // Set when a refresh attempt fails; the client treats it as a signal to
+    // re-authenticate (the stale access token will start returning 401s).
+    error?: string;
+  }
+}
+
+// How long before the access token expires it is refreshed.
+const REFRESH_MARGIN_MS = 60_000;
+
+// Decode a JWT and return its expiry in milliseconds, if present.
+function getTokenExpiry(token?: string): number | undefined {
+  if (!token) return undefined;
+  const decoded = jwt.decode(token);
+  if (
+    decoded &&
+    typeof decoded !== "string" &&
+    typeof decoded.exp === "number"
+  ) {
+    return decoded.exp * 1000;
+  }
+  return undefined;
+}
+
+// Exchange the refresh token for a fresh access token via Django's SimpleJWT
+// endpoint (POST /api/auth/token/refresh/ — body { refresh }, returns { access }
+// under the standard { status, message, data } envelope).
+//
+// Only Django saying the refresh token is dead (401, or 400 for a missing one)
+// flags `error`, which makes SessionGuard sign the user out. A network error
+// or 5xx keeps the token as it is and the next session read retries, so a
+// short backend outage does not log everyone out.
+async function refreshAccessToken(token: JWT): Promise<JWT> {
+  try {
+    const res = await fetch(ENDPOINTS.refreshToken(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh: token.refresh_token }),
+    });
+
+    if (res.status === 401 || res.status === 400) {
+      return { ...token, error: "RefreshAccessTokenError" };
+    }
+    if (!res.ok) {
+      console.error("Failed to refresh access token:", res.statusText);
+      return token;
+    }
+
+    const data = await res.json();
+    const access: string | undefined = data?.data?.access;
+    if (!access) {
+      return token;
+    }
+
+    return {
+      ...token,
+      access_token: access,
+      accessTokenExpires: getTokenExpiry(access),
+      error: undefined,
+    };
+  } catch (error) {
+    console.error("Error refreshing access token:", error);
+    return token;
+  }
+}
+
+export const authOptions: AuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
+  pages: {
+    signIn: "/login",
+    // error: "/error",
+  },
+  session: {
+    strategy: "jwt",
+  },
+  providers: [
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const res = await fetch(ENDPOINTS.login(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(credentials),
+        });
+
+        // Every failure is thrown as Django's `{ message, data }` envelope
+        // (JSON in the error string), so the login form reads one shape.
+        // Django answers in JSON, but a crash page or a proxy in front of it
+        // answers in HTML; parsing that put "Unexpected token '<'" on the
+        // form, so anything that isn't JSON becomes a plain message.
+        const data = await res.json().catch(() => null);
+        if (!data) {
+          throw new Error(
+            JSON.stringify({
+              message: "We couldn't log you in right now. Please try again.",
+            }),
+          );
+        }
+
+        if (res.ok && data?.data) {
+          // Platform superusers must NEVER access the dashboard. Reject them at
+          // login so they never receive a session — only company admins
+          // (is_staff=true) and staff (is_staff=false) are allowed in.
+          if (data.data.is_superuser) {
+            throw new Error(
+              JSON.stringify({
+                message: "Superuser accounts cannot access the dashboard.",
+              }),
+            );
+          }
+          return data.data;
+        }
+        throw new Error(JSON.stringify(data));
+      },
+    }),
+  ],
+  events: {
+    // End the session on Django too, not just in this cookie: its access and
+    // refresh tokens would otherwise keep working until they expire. Runs on
+    // the server, where the refresh token is. Best-effort — a failure here
+    // (e.g. the token was already revoked) must not block signing out.
+    async signOut({ token }) {
+      if (!token?.access_token) return;
+      try {
+        await fetch(ENDPOINTS.logout(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token.access_token}`,
+          },
+          body: JSON.stringify({ refresh: token.refresh_token }),
+        });
+      } catch (error) {
+        console.error("Django logout failed:", error);
+      }
+    },
+  },
+  callbacks: {
+    async session({ session, token }) {
+      session = {
+        ...session,
+        error: token.error,
+        user: {
+          email: token.email,
+          username: token.username,
+          name: token.name,
+          access_token: token.access_token,
+          company_code: token.company_code,
+          is_staff: token.is_staff,
+          role: token.role,
+          permissions: token.permissions,
+          accessible_stores: token.accessible_stores,
+        },
+      };
+      return session;
+    },
+
+    // Store all data in the JWT (internal only)
+    async jwt({ token, user }) {
+      // On initial login
+      if (user) {
+        token.access_token = user.token;
+        token.refresh_token = user.refresh;
+        token.accessTokenExpires = getTokenExpiry(user.token);
+
+        token.email = user.email;
+        token.username = user.username;
+        token.name = user.name;
+
+        // Tenancy/identity persisted from the Django login response, so every
+        // request can resolve its company + per-store access from the session.
+        token.company_code = user.company_code ?? null;
+        token.is_staff = user.is_staff ?? false;
+        token.role = user.role ?? null;
+        token.permissions = user.permissions ?? {};
+        token.accessible_stores = user.accessible_stores ?? [];
+
+        return token;
+      }
+
+      // Refresh a minute before expiry, not after: a request sent with a
+      // token on its last second can arrive expired, and its 401 signs the
+      // user out. A refresh that already failed is not retried on every
+      // read — SessionGuard signs the user out instead.
+      if (
+        !token.error &&
+        token.accessTokenExpires &&
+        Date.now() > token.accessTokenExpires - REFRESH_MARGIN_MS
+      ) {
+        token = await refreshAccessToken(token);
+      }
+
+      // Keep company/identity claims fresh — role, permissions and company
+      // can change server-side after login. Cached (≤1 call/min/token) and
+      // fails open to the existing claims on any error.
+      const identity = await refreshIdentity(token.access_token);
+      if (identity) {
+        token.company_code = identity.company_code;
+        token.is_staff = identity.is_staff;
+        token.role = identity.role;
+        token.permissions = identity.permissions;
+        token.accessible_stores = identity.accessible_stores;
+      }
+
+      return token;
+    },
+  },
+};
+
+export default NextAuth(authOptions);

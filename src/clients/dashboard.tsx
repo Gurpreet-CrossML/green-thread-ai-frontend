@@ -1,0 +1,377 @@
+"use client";
+
+import {
+  CustomerInteractionLineChart,
+  type Granularity,
+} from "@/components/custom/customer-interaction-line-chart";
+import { GuestVsSignedUserRadialChart } from "@/components/custom/guest-vs-signed-user-radial-chart";
+import { PerformanceRadialChart } from "@/components/custom/performance-radial-char";
+import { SentimentsPieChart } from "@/components/custom/sentiments-pie-chat";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { InfoIcon } from "@/components/custom/info-icon";
+import { PageHeading } from "@/components/custom/page-heading";
+import { Typography } from "@/components/ui/typography";
+import { custructTimeInHumanReadableFormat } from "@/lib/helpers";
+import {
+  FetchDashboard,
+  FetchConversationHistory,
+} from "@/redux/api-slice/dashboard-slice";
+import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { subMonths } from "date-fns";
+import { useEffect, useState } from "react";
+import { IconDownload } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+type SummaryMetric = {
+  label: string;
+  value: string;
+  infoText: string;
+  status: string;
+  statusVariant: "success" | "warning" | "neutral" | "info";
+};
+
+const toISODate = (date: Date) => date.toISOString().slice(0, 10);
+
+// Default date range per granularity, anchored to today.
+const defaultRange = (granularity: Granularity) => {
+  const to = new Date();
+  const from = new Date();
+  if (granularity === "hourly") {
+    from.setDate(to.getDate() - 7);
+  } else if (granularity === "weekly") {
+    from.setDate(to.getDate() - 28);
+  } else {
+    // subMonths clamps month-end overflow (e.g. Mar 31 -> Feb 28).
+    return { from: toISODate(subMonths(to, 1)), to: toISODate(to) };
+  }
+  return { from: toISODate(from), to: toISODate(to) };
+};
+
+export default function Dashboard() {
+  const dispatch = useAppDispatch();
+  const storeCode = useAppSelector(
+    (state) => state.GetStoresReducer.selectedStore,
+  );
+
+  const { FetchFeedbackInsightsData } = useAppSelector(
+    (state) => state.GetDashboardReducer.FetchFeedbackInsightsState,
+  );
+
+  const { FetchEngagementData } = useAppSelector(
+    (state) => state.GetDashboardReducer.FetchEngagementDataState,
+  );
+
+  const { FetchOperationalEfficiencyData } = useAppSelector(
+    (state) => state.GetDashboardReducer.FetchOperationalEfficiencyDataState,
+  );
+
+  const { FetchUserMatrixData } = useAppSelector(
+    (state) => state.GetDashboardReducer.FetchUserMatrixState,
+  );
+
+  const { FetchConversionRateData } = useAppSelector(
+    (state) => state.GetDashboardReducer.FetchConversionRateDataState,
+  );
+
+  const { FetchConversationHistoryData, FetchConversationHistoryIsLoading } =
+    useAppSelector(
+      (state) => state.GetDashboardReducer.FetchConversationHistoryState,
+    );
+
+  const [granularity, setGranularity] = useState<Granularity>("hourly");
+  const [from, setFrom] = useState(() => defaultRange("hourly").from);
+  const [to, setTo] = useState(() => defaultRange("hourly").to);
+
+  const handleGranularityChange = (next: Granularity) => {
+    setGranularity(next);
+    const range = defaultRange(next);
+    setFrom(range.from);
+    setTo(range.to);
+  };
+
+  useEffect(() => {
+    if (!storeCode) return;
+    // One consolidated request for all five summary widgets (feedback insights,
+    // engagement, operational efficiency, user matrix, conversion rate) — see
+    // /api/analytics/dashboard. Conversation history stays separate as it has
+    // its own date-range controls.
+    dispatch(FetchDashboard({ storeCode }));
+  }, [dispatch, storeCode]);
+
+  useEffect(() => {
+    if (!storeCode || !from || !to) return;
+    dispatch(
+      FetchConversationHistory({
+        storeCode,
+        from,
+        to,
+        granularity,
+        aggregated: true,
+      }),
+    );
+  }, [dispatch, storeCode, from, to, granularity]);
+
+  const performanceSummaryMetrics: SummaryMetric[] = [
+    {
+      label: "CSAT Score",
+      value: `${FetchFeedbackInsightsData?.csat_score?.percentage || 0}%`,
+      infoText:
+        "Shows how satisfied customers were after interacting with the chatbot, based on submitted feedback and ratings.",
+      status: "Customer Satisfaction",
+      statusVariant: "info" as const,
+    },
+    {
+      label: "Conversion Rate",
+      value: `${FetchConversionRateData?.percentage || 0}%`,
+      infoText:
+        "Percentage of chatbot sessions where the user clicked a checkout link, out of all sessions in the selected period.",
+      status: `${FetchConversionRateData?.converted_count || 0} of ${FetchConversionRateData?.total_count || 0} sessions`,
+      statusVariant: "info" as const,
+    },
+    {
+      label: "Total Sessions",
+      value: FetchEngagementData?.total_threads?.toLocaleString() || "0",
+      infoText:
+        "Shows how many chatbot sessions happened in the selected time range, so you can quickly understand overall traffic volume.",
+      status: "All Sessions",
+      statusVariant: "neutral" as const,
+    },
+    {
+      label: "Active Sessions",
+      value: FetchEngagementData?.sessions_resolved?.toLocaleString() || "0",
+      infoText:
+        "Shows the number of sessions currently marked as active in the analytics data, helping you gauge current engagement.",
+      status: "Currently Active",
+      statusVariant: "neutral" as const,
+    },
+    {
+      label: "Avg Response Time",
+      value: `${FetchEngagementData?.avg_response_time_seconds?.toFixed(2) || "0.00"}s`,
+      infoText:
+        "Shows how quickly the chatbot usually replies after a customer message. Lower response times generally mean a smoother experience.",
+      status: "Response Metric",
+      statusVariant: "info" as const,
+    },
+    {
+      label: "Avg Handle Time",
+      value: `${custructTimeInHumanReadableFormat(FetchFeedbackInsightsData?.avg_handle_time?.value || 0, FetchFeedbackInsightsData?.avg_handle_time?.unit)}`,
+      infoText:
+        "Shows the average time taken to handle a conversation from start to finish, including resolution.",
+      status: "Per Session",
+      statusVariant: "info" as const,
+    },
+    {
+      label: "Resolution Rate",
+      value: `${FetchOperationalEfficiencyData?.bot_resolution_rate?.percentage || 0}%`,
+      infoText:
+        "Shows the share of conversations that were fully resolved by the chatbot without needing handoff to a human agent.",
+      status: "Resolution Metric",
+      statusVariant: "info" as const,
+    },
+  ];
+
+  const exportFileStem = `dashboard_${storeCode || "all-stores"}_${from}_to_${to}`;
+
+  const exportCsv = () => {
+    const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const rows = [
+      ["Dashboard", "Store", storeCode || "All stores"],
+      ["Date range", from, to],
+      [],
+      ["Metric", "Value", "Detail"],
+      ...performanceSummaryMetrics.map((metric) => [
+        metric.label,
+        metric.value,
+        metric.status,
+      ]),
+    ];
+    const csv = rows
+      .map((row) => row.map((value) => quote(String(value ?? ""))).join(","))
+      .join("\r\n");
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${exportFileStem}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPdf = () => {
+    // Browsers own PDF creation. Setting the title supplies a meaningful
+    // default filename in the system print dialog's "Save as PDF" flow.
+    const previousTitle = document.title;
+    document.title = exportFileStem;
+    window.print();
+    window.setTimeout(() => {
+      document.title = previousTitle;
+    }, 0);
+  };
+
+  const sentimentPieChartData = [
+    {
+      sentiment: "positive",
+      score:
+        FetchFeedbackInsightsData?.feedback_distribution?.positive?.value || 0,
+      fill: "var(--color-positive)",
+    },
+    {
+      sentiment: "neutral",
+      score:
+        FetchFeedbackInsightsData?.feedback_distribution?.neutral?.value || 0,
+      fill: "var(--color-neutral)",
+    },
+    {
+      sentiment: "negative",
+      score:
+        FetchFeedbackInsightsData?.feedback_distribution?.negative?.value || 0,
+      fill: "var(--color-negative)",
+    },
+  ];
+
+  const performanceRadialChartData = [
+    {
+      metric: "responseTime",
+      value:
+        FetchFeedbackInsightsData?.performance_overview?.find(
+          (item) => item.metric === "Response Time",
+        )?.value || 0,
+      fill: "var(--color-responseTime)",
+    },
+    {
+      metric: "resolutionRate",
+      value:
+        FetchFeedbackInsightsData?.performance_overview?.find(
+          (item) => item.metric === "Resolution Rate",
+        )?.value || 0,
+      fill: "var(--color-resolutionRate)",
+    },
+    {
+      metric: "firstContact",
+      value:
+        FetchFeedbackInsightsData?.performance_overview?.find(
+          (item) => item.metric === "First Contact",
+        )?.value || 0,
+      fill: "var(--color-firstContact)",
+    },
+    {
+      metric: "satisfaction",
+      value:
+        FetchFeedbackInsightsData?.performance_overview?.find(
+          (item) => item.metric === "Satisfaction",
+        )?.value || 0,
+      fill: "var(--color-satisfaction)",
+    },
+    {
+      metric: "effortScore",
+      value:
+        FetchFeedbackInsightsData?.performance_overview?.find(
+          (item) => item.metric === "Effort Score",
+        )?.value || 0,
+      fill: "var(--color-effortScore)",
+    },
+  ];
+
+  const userActivityChartData = [
+    {
+      month: "january",
+      guest: FetchUserMatrixData?.guest_user || 0,
+      signed: FetchUserMatrixData?.signed_user || 0,
+    },
+  ];
+
+  const conversationHistoryChartData =
+    FetchConversationHistoryData?.points ?? [];
+
+  return (
+    <div className="flex flex-col gap-6 p-4">
+      <PageHeading
+        title="Dashboard"
+        description="How your AI assistant is performing — engagement, efficiency, sentiment, and conversions at a glance."
+        action={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline">
+                <IconDownload />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={exportCsv}>
+                Export as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={exportPdf}>
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+      <section className="flex flex-col gap-4">
+        <Typography variant="h4">Performance Summary</Typography>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {performanceSummaryMetrics.map((metric) => {
+            const statusColors = {
+              success: "bg-success/20 text-success",
+              warning: "bg-orange/20 text-orange",
+              neutral: "bg-muted text-muted-foreground",
+              info: "bg-primary/10 text-primary",
+            };
+            return (
+              <Card key={metric.label} size="sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-1.5">
+                    <Typography variant="muted" as="h3">
+                      {metric.label}
+                    </Typography>
+                    <InfoIcon text={metric.infoText} />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Typography variant="h3" as="p">
+                    {metric.value}
+                  </Typography>
+                </CardContent>
+                <CardFooter>
+                  <span
+                    className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${statusColors[metric.statusVariant]}`}
+                  >
+                    {metric.status}
+                  </span>
+                </CardFooter>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <SentimentsPieChart data={sentimentPieChartData} />
+        <PerformanceRadialChart chartData={performanceRadialChartData} />
+        <GuestVsSignedUserRadialChart chartData={userActivityChartData} />
+      </div>
+      <CustomerInteractionLineChart
+        chartData={conversationHistoryChartData}
+        loading={FetchConversationHistoryIsLoading}
+        granularity={granularity}
+        onGranularityChange={handleGranularityChange}
+        from={from}
+        to={to}
+        onFromChange={setFrom}
+        onToChange={setTo}
+      />
+    </div>
+  );
+}

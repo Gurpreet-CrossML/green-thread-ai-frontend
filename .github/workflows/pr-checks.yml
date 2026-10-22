@@ -1,0 +1,53 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - pre-dev
+
+jobs:
+  lint-and-typecheck:
+    name: Lint, Format, Type Check & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint (lint)
+        run: npm run lint
+
+      - name: Run Prettier (format check)
+        run: npx prettier --check .
+
+      - name: Run TypeScript (type check)
+        run: npx tsc --noEmit
+
+      - name: Run tests (Vitest)
+        # Unit tests run with no DB; the cross-tenant integration tests self-skip
+        # unless DATABASE_URL is present (see src/db/__tests__/cross-tenant.test.ts).
+        run: npm run test
+
+      - name: Schema drift check (db:check)
+        # Proves the committed Drizzle schema still matches the live DB. Needs DB
+        # access, so it self-skips until a DATABASE_URL secret is configured.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            npm run db:check
+          else
+            echo "Skipping db:check — no DATABASE_URL secret configured."
+          fi
+
+      - name: Run Next.js build (compile check)
+        run: npm run build
