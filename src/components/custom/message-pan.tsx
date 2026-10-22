@@ -269,13 +269,19 @@ export default function MessagePan({
                     isCustomer ? "flex-row-reverse" : "flex-row"
                   }`}
                 >
-                  {isCustomer && (
-                    <Avatar className="h-7 w-7 shrink-0 mt-1">
+                  {/* First in the row: the reversed customer row puts it on
+                      the right, the AI/agent row keeps it on the left. */}
+                  <Avatar className="h-7 w-7 shrink-0 mt-1">
+                    {isCustomer ? (
                       <AvatarFallback className="bg-muted text-muted-foreground text-xs">
                         C
                       </AvatarFallback>
-                    </Avatar>
-                  )}
+                    ) : (
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                        {isAgentMessage ? "U" : "AI"}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
                   <div className="flex flex-col">
                     <div
                       className={`flex items-center gap-2 mb-1 ${isCustomer ? "justify-end" : "justify-start"}`}
@@ -585,13 +591,6 @@ export default function MessagePan({
                       </div>
                     )}
                   </div>
-                  {!isCustomer && (
-                    <Avatar className="h-7 w-7 shrink-0 mt-1">
-                      <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                        {isAgentMessage ? "U" : "AI"}
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
                 </div>
               </div>
             </MessageAppear>,

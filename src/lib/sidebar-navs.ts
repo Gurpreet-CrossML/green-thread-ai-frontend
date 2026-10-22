@@ -93,9 +93,8 @@ function queryMatches(currentSearch: string, entryQuery: string) {
  * when all of its params match. A bare-path entry is active for its path
  * and everything under it, but stands down when a sibling's query matches
  * — that sibling is the more specific answer. When several bare paths
- * match, the deepest one wins: on /settings/customisation both the area
- * root and "Widget Customisation" (/settings/customisation) match, and the
- * latter wins.
+ * match, the deepest one wins: on /settings/store both the area root
+ * (/settings) and "Stores" (/settings/store) match, and the latter wins.
  *
  * Returns the winning url so callers compare by identity rather than each
  * re-deriving the rule.
