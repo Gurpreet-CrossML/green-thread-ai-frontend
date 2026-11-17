@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import {
   CustomerInteractionLineChart,
   type Granularity,
@@ -14,17 +16,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DashboardFilters,
+  DEFAULT_DASHBOARD_FILTERS,
+  resolveDashboardRange,
+} from "@/components/custom/dashboard-filters";
 import { InfoIcon } from "@/components/custom/info-icon";
 import { PageHeading } from "@/components/custom/page-heading";
+import { Badge } from "@/components/ui/badge";
 import { Typography } from "@/components/ui/typography";
+import { BADGE_TONE_STYLES } from "@/lib/badge-tones";
 import { custructTimeInHumanReadableFormat } from "@/lib/helpers";
 import {
   FetchDashboard,
   FetchConversationHistory,
+  type MetricTrend,
 } from "@/redux/api-slice/dashboard-slice";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { subMonths } from "date-fns";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconDownload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,24 +49,40 @@ type SummaryMetric = {
   value: string;
   infoText: string;
   status: string;
-  statusVariant: "success" | "warning" | "neutral" | "info";
+  statusVariant: "success" | "warning" | "neutral" | "info" | "danger";
+  href?: string;
+  statusHref?: string;
+  trend?: MetricTrend;
 };
 
+// How often every card and chart reloads in place.
+const AUTO_REFRESH_MS = 30_000;
+
 const toISODate = (date: Date) => date.toISOString().slice(0, 10);
+
+// A browser reload asks for fresh dashboard numbers once (skipping the
+// server's short cache); moving around inside the app keeps the cache.
+let reloadPending =
+  typeof window !== "undefined" &&
+  (
+    performance.getEntriesByType("navigation")[0] as
+      | PerformanceNavigationTiming
+      | undefined
+  )?.type === "reload";
 
 // Default date range per granularity, anchored to today.
 const defaultRange = (granularity: Granularity) => {
   const to = new Date();
-  const from = new Date();
-  if (granularity === "hourly") {
-    from.setDate(to.getDate() - 7);
-  } else if (granularity === "weekly") {
-    from.setDate(to.getDate() - 28);
-  } else {
+  if (granularity === "monthly") {
     // subMonths clamps month-end overflow (e.g. Mar 31 -> Feb 28).
     return { from: toISODate(subMonths(to, 1)), to: toISODate(to) };
   }
-  return { from: toISODate(from), to: toISODate(to) };
+  // Full timestamps: plain dates get widened to whole days by the API. A day
+  // (or 7 days) back always covers today's midnight (or that of 6 days ago),
+  // where the chart starts.
+  const days = granularity === "hourly" ? 1 : 7;
+  const from = new Date(to.getTime() - days * 24 * 3600 * 1000);
+  return { from: from.toISOString(), to: to.toISOString() };
 };
 
 export default function Dashboard() {
@@ -90,38 +116,123 @@ export default function Dashboard() {
       (state) => state.GetDashboardReducer.FetchConversationHistoryState,
     );
 
+  // Filled by the sidebar's live-chat badge, which fetches it.
+  const { FetchThreadCountsData } = useAppSelector(
+    (state) => state.GetThreadReducer.FetchThreadCountsState,
+  );
+
+  const [filters, setFilters] = useState(DEFAULT_DASHBOARD_FILTERS);
   const [granularity, setGranularity] = useState<Granularity>("hourly");
-  const [from, setFrom] = useState(() => defaultRange("hourly").from);
-  const [to, setTo] = useState(() => defaultRange("hourly").to);
+  // The interaction chart keeps its own date range, set by its own controls.
+  const [chartFrom, setChartFrom] = useState(() => defaultRange("hourly").from);
+  const [chartTo, setChartTo] = useState(() => defaultRange("hourly").to);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRef = useRef(async () => {});
 
   const handleGranularityChange = (next: Granularity) => {
     setGranularity(next);
     const range = defaultRange(next);
-    setFrom(range.from);
-    setTo(range.to);
+    setChartFrom(range.from);
+    setChartTo(range.to);
   };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshRef.current();
+    setRefreshing(false);
+  };
+
+  const { range, from, to } = filters;
 
   useEffect(() => {
     if (!storeCode) return;
-    // One consolidated request for all five summary widgets (feedback insights,
-    // engagement, operational efficiency, user matrix, conversion rate) — see
-    // /api/analytics/dashboard. Conversation history stays separate as it has
-    // its own date-range controls.
-    dispatch(FetchDashboard({ storeCode }));
-  }, [dispatch, storeCode]);
+    let inFlight: { abort: () => void }[] = [];
 
-  useEffect(() => {
-    if (!storeCode || !from || !to) return;
-    dispatch(
-      FetchConversationHistory({
+    // Load the dashboard data using the currently selected filters.
+    // When silent is true, keep the existing data visible while refreshing it.
+    // When fresh is true, the summary skips the server cache (Refresh button).
+    const load = async (silent: boolean, fresh = false) => {
+      inFlight.forEach((request) => request.abort());
+
+      // Hourly and weekly run up to "now", so recompute it on every load;
+      // monthly keeps the dates picked in the chart.
+      const chartRange =
+        granularity === "monthly"
+          ? { from: chartFrom, to: chartTo }
+          : defaultRange(granularity);
+
+      const args = {
         storeCode,
-        from,
-        to,
-        granularity,
-        aggregated: true,
-      }),
-    );
-  }, [dispatch, storeCode, from, to, granularity]);
+        ...resolveDashboardRange({ range, from, to }),
+        silent,
+      };
+
+      const batch = [
+        // One consolidated request for all five summary widgets — see
+        // /api/analytics/dashboard.
+        dispatch(FetchDashboard({ ...args, fresh })),
+
+        // The conversation history grouped by the selected time interval.
+        dispatch(
+          FetchConversationHistory({
+            ...args,
+            ...chartRange,
+            granularity,
+            aggregated: true,
+          }),
+        ),
+      ];
+
+      // Track the current requests so older requests can be ignored.
+      inFlight = batch;
+
+      const results = await Promise.all(batch);
+
+      // Ignore this result if a newer request has already started.
+      if (inFlight !== batch) return;
+
+      // All requests have finished, so clear the tracked requests.
+      inFlight = [];
+
+      // Update the last-refreshed time only if every request succeeds.
+      // If a background refresh fails, keep the previous time visible so
+      // users know the displayed data may not be up to date.
+      if (
+        results.every((result) => result.meta.requestStatus === "fulfilled")
+      ) {
+        setLastUpdated(new Date());
+      }
+    };
+
+    load(false, reloadPending);
+    reloadPending = false;
+    refreshRef.current = () => load(true, true);
+    // A custom range is a fixed past window, so only presets auto-refresh.
+    const timer =
+      range === "custom"
+        ? undefined
+        : setInterval(() => {
+            if (!document.hidden) load(true);
+          }, AUTO_REFRESH_MS);
+
+    return () => {
+      clearInterval(timer);
+      inFlight.forEach((request) => request.abort());
+      inFlight = [];
+    };
+  }, [dispatch, storeCode, range, from, to, granularity, chartFrom, chartTo]);
+
+  // Presets keep no dates of their own, so resolve the range actually on screen.
+  const exportRange = resolveDashboardRange(filters);
+
+  // Drill-through link to the Threads list, pre-filtered to match a card.
+  const threadsHref = (extraParams: Record<string, string>) => {
+    const params = new URLSearchParams(extraParams);
+    params.set("from", exportRange.from);
+    params.set("to", exportRange.to);
+    return `/threads?${params.toString()}`;
+  };
 
   const performanceSummaryMetrics: SummaryMetric[] = [
     {
@@ -131,6 +242,7 @@ export default function Dashboard() {
         "Shows how satisfied customers were after interacting with the chatbot, based on submitted feedback and ratings.",
       status: "Customer Satisfaction",
       statusVariant: "info" as const,
+      trend: FetchFeedbackInsightsData?.csat_score?.trend,
     },
     {
       label: "Conversion Rate",
@@ -139,6 +251,7 @@ export default function Dashboard() {
         "Percentage of chatbot sessions where the user clicked a checkout link, out of all sessions in the selected period.",
       status: `${FetchConversionRateData?.converted_count || 0} of ${FetchConversionRateData?.total_count || 0} sessions`,
       statusVariant: "info" as const,
+      trend: FetchConversionRateData?.trend,
     },
     {
       label: "Total Sessions",
@@ -147,14 +260,20 @@ export default function Dashboard() {
         "Shows how many chatbot sessions happened in the selected time range, so you can quickly understand overall traffic volume.",
       status: "All Sessions",
       statusVariant: "neutral" as const,
+      trend: FetchEngagementData?.total_threads_trend,
+      href: threadsHref({}),
     },
     {
       label: "Active Sessions",
-      value: FetchEngagementData?.sessions_resolved?.toLocaleString() || "0",
+      value: FetchThreadCountsData.active.toLocaleString(),
       infoText:
-        "Shows the number of sessions currently marked as active in the analytics data, helping you gauge current engagement.",
-      status: "Currently Active",
-      statusVariant: "neutral" as const,
+        "Shows the number of chats open right now, and how many of them are waiting for a human agent.",
+      status: `${FetchThreadCountsData.needsHuman} need a human`,
+      statusVariant: "danger" as const,
+      // The count is every active chat; only the "needs a human" sub-line
+      // goes to the filtered queue.
+      href: "/support?filter=all",
+      statusHref: "/support?filter=needs_human",
     },
     {
       label: "Avg Response Time",
@@ -163,6 +282,7 @@ export default function Dashboard() {
         "Shows how quickly the chatbot usually replies after a customer message. Lower response times generally mean a smoother experience.",
       status: "Response Metric",
       statusVariant: "info" as const,
+      trend: FetchEngagementData?.avg_response_time_trend,
     },
     {
       label: "Avg Handle Time",
@@ -171,24 +291,28 @@ export default function Dashboard() {
         "Shows the average time taken to handle a conversation from start to finish, including resolution.",
       status: "Per Session",
       statusVariant: "info" as const,
+      trend: FetchFeedbackInsightsData?.avg_handle_time?.trend,
     },
     {
-      label: "Resolution Rate",
+      label: "AI Resolution Rate",
       value: `${FetchOperationalEfficiencyData?.bot_resolution_rate?.percentage || 0}%`,
       infoText:
-        "Shows the share of conversations that were fully resolved by the chatbot without needing handoff to a human agent.",
-      status: "Resolution Metric",
+        "Shows the share of closed conversations the chatbot resolved on its own, without a human agent taking over.",
+      status: `${FetchOperationalEfficiencyData?.bot_resolution_rate?.count || 0} of ${FetchOperationalEfficiencyData?.bot_resolution_rate?.total || 0} chats`,
       statusVariant: "info" as const,
+      trend: FetchOperationalEfficiencyData?.bot_resolution_rate?.trend,
+      href: threadsHref({ handled_by: "ai", has_agent: "false" }),
+      statusHref: threadsHref({ handled_by: "ai", has_agent: "false" }),
     },
   ];
 
-  const exportFileStem = `dashboard_${storeCode || "all-stores"}_${from}_to_${to}`;
+  const exportFileStem = `dashboard_${storeCode || "all-stores"}_${exportRange.from}_to_${exportRange.to}`;
 
   const exportCsv = () => {
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const rows = [
       ["Dashboard", "Store", storeCode || "All stores"],
-      ["Date range", from, to],
+      ["Date range", exportRange.from, exportRange.to],
       [],
       ["Metric", "Value", "Detail"],
       ...performanceSummaryMetrics.map((metric) => [
@@ -302,22 +426,31 @@ export default function Dashboard() {
         title="Dashboard"
         description="How your AI assistant is performing — engagement, efficiency, sentiment, and conversions at a glance."
         action={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline">
-                <IconDownload />
-                Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={exportCsv}>
-                Export as CSV
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={exportPdf}>
-                Export as PDF
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex flex-wrap items-center gap-2">
+            <DashboardFilters
+              filters={filters}
+              onChange={setFilters}
+              lastUpdated={lastUpdated}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline">
+                  <IconDownload />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={exportCsv}>
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={exportPdf}>
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         }
       />
       <section className="flex flex-col gap-4">
@@ -329,7 +462,25 @@ export default function Dashboard() {
               warning: "bg-orange/20 text-orange",
               neutral: "bg-muted text-muted-foreground",
               info: "bg-primary/10 text-primary",
+              danger: "bg-red-100 text-red-600",
             };
+            const value = (
+              <Typography variant="h3" as="p">
+                {metric.value}
+              </Typography>
+            );
+            const statusBadge = (
+              <span
+                className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${statusColors[metric.statusVariant]}`}
+              >
+                {metric.status}
+              </span>
+            );
+
+            // The value and the status pill link independently (e.g. Active
+            // Sessions' count goes to all active chats, its "need a human"
+            // sub-line to a different, filtered queue) — never one link
+            // wrapping the whole card, which would force both to agree.
             return (
               <Card key={metric.label} size="sm">
                 <CardHeader>
@@ -341,16 +492,28 @@ export default function Dashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Typography variant="h3" as="p">
-                    {metric.value}
-                  </Typography>
+                  {metric.href ? (
+                    <Link href={metric.href} className="block">
+                      {value}
+                    </Link>
+                  ) : (
+                    value
+                  )}
                 </CardContent>
-                <CardFooter>
-                  <span
-                    className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${statusColors[metric.statusVariant]}`}
-                  >
-                    {metric.status}
-                  </span>
+                <CardFooter className="justify-between gap-1.5">
+                  {metric.statusHref ? (
+                    <Link href={metric.statusHref}>{statusBadge}</Link>
+                  ) : (
+                    statusBadge
+                  )}
+                  {metric.trend && (
+                    <Badge
+                      variant="outline"
+                      className={BADGE_TONE_STYLES[metric.trend.variant]}
+                    >
+                      {metric.trend.label}
+                    </Badge>
+                  )}
                 </CardFooter>
               </Card>
             );
@@ -360,17 +523,21 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <SentimentsPieChart data={sentimentPieChartData} />
         <PerformanceRadialChart chartData={performanceRadialChartData} />
-        <GuestVsSignedUserRadialChart chartData={userActivityChartData} />
+        {/* Three cards on a two-column grid leave the third alone beside
+            an empty cell; it takes the full row until three fit across. */}
+        <div className="sm:max-lg:col-span-2">
+          <GuestVsSignedUserRadialChart chartData={userActivityChartData} />
+        </div>
       </div>
       <CustomerInteractionLineChart
         chartData={conversationHistoryChartData}
         loading={FetchConversationHistoryIsLoading}
         granularity={granularity}
         onGranularityChange={handleGranularityChange}
-        from={from}
-        to={to}
-        onFromChange={setFrom}
-        onToChange={setTo}
+        from={chartFrom}
+        to={chartTo}
+        onFromChange={setChartFrom}
+        onToChange={setChartTo}
       />
     </div>
   );

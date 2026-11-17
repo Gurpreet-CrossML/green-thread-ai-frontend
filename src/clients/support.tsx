@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -23,18 +24,30 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
+import { cn, randomId } from "@/lib/utils";
+import { useIsBelowLg } from "@/hooks/use-narrow-viewport";
 import { ConversationRow } from "@/components/custom/conversation-row";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { CustomerAvatar } from "@/components/custom/customer-avatar";
-import { CustomerDetailsPanel } from "@/components/custom/customer-details-panel";
+import {
+  CustomerAvatar,
+  getInitials,
+} from "@/components/custom/customer-avatar";
+import {
+  AdminBadge,
+  AssigneeSelect,
+  type AgentOption,
+} from "@/components/custom/assignee-select";
+import {
+  CustomerDetailsButton,
+  CustomerDetailsPanel,
+} from "@/components/custom/customer-details-panel";
 import { SessionFacts } from "@/components/custom/customer-header";
 import { MultiSelectCombobox } from "@/components/custom/multi-select-combobox";
 import { SearchInput } from "@/components/custom/search-input";
 import { CardTitle } from "@/components/ui/card";
 import { Typography } from "@/components/ui/typography";
-import MessagePan from "@/components/custom/message-pan";
+import { LiveMessagePan } from "@/components/custom/message-pan";
 import {
   FetchCart,
   FetchThreadDetails,
@@ -53,34 +66,26 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { FetchStaff, type StaffMember } from "@/redux/api-slice/tenancy-slice";
 import {
   IconAlertTriangle,
+  IconArrowBackUp,
+  IconArrowLeft,
   IconFilter,
   IconHeadset,
   IconLock,
-  IconMessage2,
-  IconMessageChatbot,
+  IconMessageDots,
   IconMoodSmile,
   IconNote,
   IconPaperclip,
-  IconRobot,
   IconSend,
-  IconShieldCheck,
   IconX,
 } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "sonner";
-import { ENDPOINTS } from "@/lib/config";
+import { ACTIVE_FILTER_STYLE, ENDPOINTS } from "@/lib/config";
 import { can } from "@/lib/access-rules";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { formatRelativeDateTime } from "@/lib/helpers";
@@ -198,95 +203,31 @@ type AttachmentUpload = {
 };
 
 /**
- * Shared between Take Over and Return to AI so framer animates one into
+ * Shared between Take Over and Hand back to AI so framer animates one into
  * the other across the state change, instead of playing two unrelated
  * fades.
  */
 const HANDOVER_ACTION_ID = "thread-handover-action";
 
-type AgentOption = {
-  email: string;
-  name: string;
-  /** Company admin — shown with an "Admin" label. */
-  isAdmin?: boolean;
-  /** Can't be picked by this user (a supervisor can't assign to an admin). */
-  disabled?: boolean;
-};
-
-/** Small "Admin" tag shown beside an admin's name. */
-function AdminBadge() {
-  return (
-    <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px]">
-      <IconShieldCheck className="size-3" />
-      Admin
-    </Badge>
-  );
-}
-
 // Roles allowed to answer live chats (the backend's "conversations" write
 // permission). Viewers and content managers can't be assigned a chat.
 const CHAT_HANDLER_ROLES = ["supervisor", "agent"];
 
-/** Admin and supervisor control to hand a taken chat to another agent. */
-function ReassignAgentSelect({
-  agents,
-  currentAgent,
-  disabled,
-  onReassign,
-}: {
-  agents: AgentOption[];
-  currentAgent: string | null;
-  disabled: boolean;
-  onReassign: (email: string) => void;
-}) {
-  if (agents.length === 0) return null;
-
-  return (
-    // Shows who the chat is assigned to ("Unassigned" while the AI has it);
-    // picking an agent assigns or reassigns it.
-    <Select
-      value={currentAgent ?? ""}
-      onValueChange={(email) => {
-        if (email !== currentAgent) onReassign(email);
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger size="sm" aria-label="Reassign chat" className="w-fit">
-        <SelectValue placeholder="Unassigned" />
-      </SelectTrigger>
-      <SelectContent>
-        {agents.map((agent) => (
-          <SelectItem
-            key={agent.email}
-            value={agent.email}
-            disabled={agent.disabled}
-          >
-            <span className="flex items-center gap-2">
-              {agent.name}
-              {agent.isAdmin && <AdminBadge />}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
 function ThreadChatControls({
   activeThreadId,
   isThreadActive = true,
+  hasMessages = true,
   className,
   connectedAgent,
   connectedAgentName,
   user,
+  userRole,
   canReassign = false,
   agents = [],
   chatSocketReady,
   transitionState,
-  agentMessage,
-  setAgentMessage,
-  noteMessage,
-  setNoteMessage,
+  composerMessage,
+  setComposerMessage,
   isSavingInternalNote,
   attachments,
   isEmojiPickerOpen,
@@ -303,18 +244,18 @@ function ThreadChatControls({
 }: {
   activeThreadId?: string | null;
   isThreadActive?: boolean;
+  hasMessages?: boolean;
   className?: string;
   connectedAgent: string | null;
   connectedAgentName?: string | null;
   user: string | null;
+  userRole?: string | null;
   canReassign?: boolean;
   agents?: AgentOption[];
   chatSocketReady: boolean;
   transitionState: "idle" | "taking_over" | "returning_to_ai";
-  agentMessage: string;
-  setAgentMessage: (value: string) => void;
-  noteMessage: string;
-  setNoteMessage: (value: string) => void;
+  composerMessage: string;
+  setComposerMessage: (value: string) => void;
   isSavingInternalNote: boolean;
   attachments: AttachmentUpload[];
   isEmojiPickerOpen: boolean;
@@ -331,7 +272,6 @@ function ThreadChatControls({
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
 
   // Auto-grow the composer like a chat app, capped at a few lines.
   useEffect(() => {
@@ -339,7 +279,7 @@ function ThreadChatControls({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [agentMessage, isInternalNoteMode, noteMessage]);
+  }, [composerMessage]);
 
   if (!activeThreadId || !isThreadActive) {
     return null;
@@ -350,6 +290,7 @@ function ThreadChatControls({
   const heldByAdmin = !!agents.find((a) => a.email === connectedAgent)?.isAdmin;
   const iAmAdmin = !!agents.find((a) => a.email === user)?.isAdmin;
   const lockedByAdmin = heldByAdmin && !iAmAdmin;
+  const reassignRoleLabel = userRole === "supervisor" ? "supervisor" : "admin";
 
   const isUploadingAttachments = attachments.some(
     (attachment) => attachment.status === "uploading",
@@ -357,16 +298,17 @@ function ThreadChatControls({
   const hasFailedAttachments = attachments.some(
     (attachment) => attachment.status === "error",
   );
-  const inputsDisabled =
-    transitionState !== "idle" ||
-    (!isInternalNoteMode && isUploadingAttachments);
+  const inputsDisabled = transitionState !== "idle" || isUploadingAttachments;
 
+  // Notes go over REST; only a reply needs the chat socket.
   const canSend =
-    (isInternalNoteMode
-      ? noteMessage.trim().length > 0
-      : agentMessage.trim().length > 0 || attachments.length > 0) &&
+    (composerMessage.trim().length > 0 || attachments.length > 0) &&
     transitionState === "idle" &&
-    (isInternalNoteMode || (!isUploadingAttachments && !hasFailedAttachments));
+    chatSocketReady &&
+    !isUploadingAttachments &&
+    !hasFailedAttachments;
+  const canSaveInternalNote =
+    composerMessage.trim().length > 0 && transitionState === "idle";
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     onEmojiSelect(emojiData.emoji);
@@ -374,125 +316,156 @@ function ThreadChatControls({
 
   return (
     <div
-      className={`relative border-t border-border/50 bg-background/95 p-4 ${className ?? ""}`}
+      className={`relative mx-2 mb-2 flex flex-col gap-0 overflow-hidden rounded-xl border border-border/60 bg-background/95 shadow-xs sm:mx-3 sm:mb-3 ${className ?? ""}`}
     >
-      {/* The three states of this bar are one thing changing, not three
-          things appearing. AnimatePresence keeps the outgoing state
-          mounted while the incoming one arrives — which is what lets the
-          handover button below morph between them rather than one
-          disappearing and another popping in somewhere else. */}
-      <AnimatePresence initial={false}>
+      {/* The states of this bar are one thing changing, not several things
+          appearing. AnimatePresence keeps the outgoing state mounted while
+          the incoming one arrives — which is what lets the handover button
+          morph between them rather than one disappearing and another
+          popping in somewhere else. */}
+      <AnimatePresence initial={false} mode="popLayout">
         {!connectedAgent && (
           <motion.div
             key="ai-handling"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="rounded-xl border bg-muted/30 p-3"
+            className="order-1 border-b border-border/60 bg-background px-3 py-2 sm:px-4 sm:py-2.5"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <IconMessageChatbot className="size-5" />
+            <div
+              className={cn(
+                "flex gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3",
+                canReassign
+                  ? "flex-col"
+                  : "flex-row items-center justify-between",
+              )}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary sm:size-9">
+                  AI
                 </div>
                 <div className="min-w-0">
-                  <Typography variant="small" as="p" className="leading-normal">
-                    AI Assistant is handling this conversation
+                  <Typography
+                    variant="small"
+                    as="p"
+                    className="text-xs leading-normal sm:text-sm"
+                  >
+                    {hasMessages ? (
+                      <>
+                        <span className="sm:hidden">
+                          AI Assistant is replying
+                        </span>
+                        <span className="hidden sm:inline">
+                          AI Assistant is handling this conversation
+                        </span>
+                      </>
+                    ) : (
+                      "AI Assistant is ready"
+                    )}
                   </Typography>
-                  <Typography variant="muted">
-                    Take over anytime to reply as a human agent.
+                  <Typography variant="muted" className="text-xs sm:text-sm">
+                    {hasMessages ? (
+                      <>
+                        <span className="sm:hidden">
+                          Unassigned · take over to reply
+                        </span>
+                        <span className="hidden sm:inline">
+                          Take over anytime to reply as a human agent.
+                        </span>
+                      </>
+                    ) : (
+                      "It replies as soon as the customer sends a message. You can add internal notes anytime."
+                    )}
                   </Typography>
                 </div>
               </div>
-              {canReassign && (
-                <ReassignAgentSelect
-                  agents={agents}
-                  currentAgent={null}
-                  disabled={transitionState !== "idle" || !chatSocketReady}
-                  onReassign={onReassign}
-                />
-              )}
-              {activeThreadId && !canReassign && connectedAgent !== user && (
-                // Same layoutId as Return to AI: framer treats the two as one
-                // element and slides it from here into the composer, so the
-                // control an agent just pressed is visibly where it went.
+              <div
+                className={cn(
+                  "flex min-w-0 items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:shrink-0 sm:gap-3",
+                  canReassign ? "w-full" : "ml-auto w-auto shrink-0",
+                )}
+              >
+                {canReassign && (
+                  <AssigneeSelect
+                    agents={agents}
+                    currentAgent={null}
+                    disabled={transitionState !== "idle" || !chatSocketReady}
+                    onReassign={onReassign}
+                  />
+                )}
+                {/* Same layoutId as Hand back to AI: framer treats the two as
+                    one element and slides it from here into the status row,
+                    so the control an agent just pressed is visibly where it
+                    went. */}
                 <motion.div layoutId={HANDOVER_ACTION_ID} className="shrink-0">
                   <Button
                     type="button"
+                    size="sm"
+                    className="h-9 rounded-lg px-3 text-xs sm:h-8 sm:rounded-md sm:px-3 sm:text-sm"
                     onClick={onTakeOver}
-                    disabled={
-                      transitionState !== "idle" ||
-                      !chatSocketReady ||
-                      !!(connectedAgent && connectedAgent !== user)
-                    }
+                    disabled={transitionState !== "idle" || !chatSocketReady}
                   >
-                    <IconHeadset className="h-4 w-4" />
-                    Take Over
+                    <IconHeadset className="hidden h-4 w-4 sm:block" />
+                    <span className="sm:hidden">Take over</span>
+                    <span className="hidden sm:inline">Take Over</span>
                   </Button>
                 </motion.div>
-              )}
+              </div>
             </div>
           </motion.div>
         )}
 
-        {/* LC-02: while the AI handles the chat the composer only takes
-            internal notes (staff-only; the customer never sees them). The
-            Take Over card above is untouched. */}
-        {!connectedAgent && (
+        {/* Whoever does not hold the chat (the AI holds it, or another
+            agent does) can still leave internal notes: staff-only, the
+            customer never sees them. */}
+        {(!connectedAgent || connectedAgent !== user) && (
           <motion.div
-            key="ai-note-composer"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            key="internal-note-composer"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="mt-2 space-y-2"
+            className="order-2 p-2 sm:p-2.5"
           >
-            <div className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm">
-              <div className="flex items-center gap-1.5 border-b border-border/50 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                <IconLock className="size-3.5 text-primary" />
-                Internal note only — visible to your team, never to the customer
+            <div className="overflow-hidden rounded-xl border border-amber-300/80 bg-amber-50 shadow-xs transition-shadow focus-within:border-amber-400 focus-within:shadow-sm dark:border-amber-700/70 dark:bg-amber-950/30">
+              <div className="flex items-start gap-2 bg-amber-50 px-3 py-1.5 text-xs leading-snug text-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+                <IconLock className="mt-0.5 size-3 shrink-0 text-amber-700 dark:text-amber-300" />
+                <span>
+                  Internal note only — visible to your team, never to the
+                  customer
+                </span>
               </div>
-              <div className="px-3 pt-1">
+              <div className="min-h-16 px-3 pt-1 sm:min-h-20 sm:pt-1.5">
                 <textarea
                   rows={1}
-                  placeholder="Write an internal note (customer won't see it)…"
-                  value={noteMessage}
+                  placeholder="Add a note for your team."
+                  value={composerMessage}
                   disabled={isSavingInternalNote || transitionState !== "idle"}
-                  onChange={(event) => setNoteMessage(event.target.value)}
+                  onChange={(event) => setComposerMessage(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
                       onSendInternalNote();
                     }
                   }}
-                  className="max-h-30 w-full resize-none bg-transparent py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  className="max-h-20 min-h-12 w-full resize-none bg-transparent py-0.5 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </div>
-              <div className="flex items-center gap-1 px-2 py-1">
-                <Typography
-                  variant="muted"
-                  as="span"
-                  className="ml-1 hidden truncate sm:inline"
-                >
-                  Enter to save note · Shift + Enter for a new line
-                </Typography>
+              <div className="flex items-center gap-3 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 sm:py-2 dark:bg-amber-950/30 dark:text-amber-100">
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                   <Button
                     type="button"
                     size="sm"
                     onClick={onSendInternalNote}
-                    disabled={
-                      noteMessage.trim().length === 0 ||
-                      isSavingInternalNote ||
-                      transitionState !== "idle"
-                    }
+                    disabled={!canSaveInternalNote || isSavingInternalNote}
                     title="Save internal note"
+                    className="h-8 bg-amber-700 px-3 text-xs text-white hover:bg-amber-800 sm:text-sm dark:bg-amber-600 dark:hover:bg-amber-500"
                   >
                     {isSavingInternalNote ? (
-                      <Spinner className="size-4" />
+                      <Spinner className="size-3.5 sm:size-4" />
                     ) : (
-                      <IconNote className="size-4" />
+                      <IconNote className="size-3.5 sm:size-4" />
                     )}
                     Add note
                   </Button>
@@ -505,61 +478,127 @@ function ThreadChatControls({
         {connectedAgent && connectedAgent !== user && (
           <motion.div
             key="other-agent"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="flex items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3"
+            className="order-1 flex flex-col gap-2 border-b border-border/60 bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-2.5"
           >
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <IconHeadset className="size-5" />
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                {getInitials(connectedAgentName || connectedAgent)}
               </div>
               <div className="min-w-0">
                 <Typography variant="small" as="p" className="leading-normal">
                   <span className="inline-flex items-center gap-2">
-                    Taken by {connectedAgentName || connectedAgent}
-                    {agents.find((a) => a.email === connectedAgent)
-                      ?.isAdmin && <AdminBadge />}
+                    {connectedAgentName || connectedAgent} is replying
+                    {heldByAdmin && <AdminBadge />}
                   </span>
                 </Typography>
                 <Typography variant="muted">
                   {lockedByAdmin
                     ? "Only an admin can reassign this chat."
-                    : "Only the connected agent can reply right now."}
+                    : canReassign
+                      ? `AI is paused · As a ${reassignRoleLabel}, you can take over or reassign.`
+                      : `AI is paused · You can add internal notes for ${connectedAgentName || "this agent"}.`}
                 </Typography>
               </div>
             </div>
-            {canReassign && (
-              <ReassignAgentSelect
+            <div className="flex w-full min-w-0 shrink-0 flex-nowrap items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-3">
+              <AssigneeSelect
                 agents={agents}
                 currentAgent={connectedAgent}
+                currentAgentName={connectedAgentName}
                 disabled={
+                  !canReassign ||
                   transitionState !== "idle" ||
                   !chatSocketReady ||
                   lockedByAdmin
                 }
                 onReassign={onReassign}
               />
-            )}
+              {canReassign && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={onTakeOver}
+                  disabled={
+                    transitionState !== "idle" ||
+                    !chatSocketReady ||
+                    lockedByAdmin
+                  }
+                >
+                  <IconHeadset className="h-4 w-4" />
+                  Take over
+                </Button>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {connectedAgent === user && (
+          <motion.div
+            key="agent-status"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="order-1 flex flex-col gap-2 border-b border-border/60 bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-2.5"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground sm:size-9">
+                {getInitials(connectedAgentName) || "You"}
+              </div>
+              <div className="min-w-0">
+                <Typography
+                  variant="small"
+                  as="p"
+                  className="text-xs leading-normal sm:text-sm"
+                >
+                  You&apos;re replying
+                </Typography>
+                <Typography variant="muted" className="text-xs sm:text-sm">
+                  AI is paused
+                </Typography>
+              </div>
+            </div>
+            <div className="flex w-full min-w-0 shrink-0 items-center justify-end gap-1.5 sm:w-auto sm:gap-3">
+              <AssigneeSelect
+                agents={agents}
+                currentAgent={connectedAgent}
+                currentAgentName={connectedAgentName}
+                disabled={
+                  !canReassign || transitionState !== "idle" || !chatSocketReady
+                }
+                onReassign={onReassign}
+              />
+              <motion.div layoutId={HANDOVER_ACTION_ID} className="shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-primary px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary sm:px-3 sm:text-sm"
+                  onClick={onReturnToAI}
+                  disabled={transitionState !== "idle" || !chatSocketReady}
+                >
+                  <IconArrowBackUp className="size-3.5 sm:size-4" />
+                  Hand back to AI
+                </Button>
+              </motion.div>
+            </div>
           </motion.div>
         )}
 
         {connectedAgent === user && (
           <motion.div
             key="composer"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm"
+            className="order-2 m-2 overflow-hidden rounded-lg border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm sm:m-2.5"
           >
-            {isInternalNoteMode && (
-              <div className="flex items-center gap-1.5 border-b border-border/50 bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                <IconLock className="size-3.5 text-primary" />
-                Only visible to your team — the customer won&apos;t see this
-              </div>
-            )}
             {isEmojiPickerOpen && (
               <div className="border-b border-border/50 p-2">
                 <EmojiPicker
@@ -573,7 +612,7 @@ function ThreadChatControls({
               </div>
             )}
 
-            {!isInternalNoteMode && attachments.length > 0 && (
+            {attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 border-b border-border/50 p-2">
                 {attachments.map((attachment) => {
                   const isImage = attachment.file.type.startsWith("image/");
@@ -583,7 +622,7 @@ function ThreadChatControls({
                   return (
                     <div
                       key={attachment.id}
-                      className="group relative flex items-center gap-2 rounded-xl border border-border/60 bg-muted/60 py-1.5 pl-1.5 pr-2.5 text-xs text-muted-foreground"
+                      className="group relative flex items-center gap-2 rounded-xl border border-border/60 bg-muted/60 py-1.5 pr-2.5 pl-1.5 text-xs text-muted-foreground"
                     >
                       <div className="relative h-8 w-8 shrink-0">
                         {isImage ? (
@@ -645,146 +684,112 @@ function ThreadChatControls({
             )}
 
             {/* Text input row */}
-            <div className="px-3 pt-3">
+            <div className="min-h-16 px-2.5 pt-2 sm:min-h-20 sm:px-3 sm:pt-3">
               <textarea
                 ref={textareaRef}
                 rows={1}
                 placeholder={
-                  isInternalNoteMode
-                    ? "Write an internal note (customer won't see it)…"
-                    : isUploadingAttachments
-                      ? "Uploading image…"
-                      : "Type your reply…"
+                  isUploadingAttachments
+                    ? "Uploading image…"
+                    : "Type your reply…"
                 }
-                value={isInternalNoteMode ? noteMessage : agentMessage}
-                disabled={
-                  isInternalNoteMode ? isSavingInternalNote : inputsDisabled
-                }
-                onChange={(event) =>
-                  isInternalNoteMode
-                    ? setNoteMessage(event.target.value)
-                    : setAgentMessage(event.target.value)
-                }
+                value={composerMessage}
+                disabled={inputsDisabled}
+                onChange={(event) => setComposerMessage(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    if (isInternalNoteMode) onSendInternalNote();
-                    else onSendAgentMessage();
+                    onSendAgentMessage();
                   }
                 }}
-                className="max-h-30 w-full resize-none bg-transparent py-1 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                className="max-h-24 min-h-12 w-full resize-none bg-transparent py-0.5 text-xs leading-5 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm sm:leading-6"
               />
             </div>
 
-            {/* Toolbar: emoji + attach + hint on the left, send on the right */}
-            <div className="flex items-center gap-1 p-2">
-              {!isInternalNoteMode && (
-                <>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon-sm"
-                    disabled={inputsDisabled}
-                    aria-pressed={isEmojiPickerOpen}
-                    className={
-                      isEmojiPickerOpen ? "ring-2 ring-ring/40" : undefined
-                    }
-                    onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)}
-                    title="Add emoji"
-                  >
-                    <IconMoodSmile className="size-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon-sm"
-                    disabled={inputsDisabled}
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Attach image or file"
-                  >
-                    <IconPaperclip className="size-4" />
-                  </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    disabled={inputsDisabled}
-                    onChange={onFileSelection}
-                    className="hidden"
-                  />
-                </>
-              )}
+            {/* Toolbar: emoji + attach + hint on the left, note and send on the right */}
+            <div className="flex flex-nowrap items-center gap-1 p-1.5 sm:p-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                disabled={inputsDisabled}
+                aria-pressed={isEmojiPickerOpen}
+                className={cn(
+                  "size-7 sm:size-8",
+                  isEmojiPickerOpen && "ring-2 ring-ring/40",
+                )}
+                onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)}
+                title="Add emoji"
+              >
+                <IconMoodSmile className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                disabled={inputsDisabled}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach image or file"
+                className="size-7 sm:size-8"
+              >
+                <IconPaperclip className="size-4" />
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                disabled={inputsDisabled}
+                onChange={onFileSelection}
+                className="hidden"
+              />
               <Typography
                 variant="muted"
                 as="span"
-                className="ml-2 hidden truncate sm:inline"
+                className="ml-2 hidden min-w-0 flex-1 truncate sm:inline"
               >
                 {isUploadingAttachments
                   ? "Uploading attachment…"
-                  : isInternalNoteMode
-                    ? "Enter to save note · Shift + Enter for a new line"
-                    : "Enter to send · Shift + Enter for a new line"}
+                  : "Enter to send · Shift + Enter for a new line"}
               </Typography>
-              <div className="ml-auto flex shrink-0 items-center gap-2">
-                {!isInternalNoteMode && attachments.length > 0 && (
-                  <Typography variant="muted" as="span">
+              <div className="ml-auto flex w-auto min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-2">
+                {attachments.length > 0 && (
+                  <Typography
+                    variant="muted"
+                    as="span"
+                    className="hidden 2xl:inline"
+                  >
                     {attachments.length} attached
                   </Typography>
                 )}
-                {canReassign && connectedAgent && (
-                  <ReassignAgentSelect
-                    agents={agents}
-                    currentAgent={connectedAgent}
-                    disabled={transitionState !== "idle" || !chatSocketReady}
-                    onReassign={onReassign}
-                  />
-                )}
-                {/* Sits beside Send because it's the other thing an agent can
-                  do from here: hand the conversation back instead of
-                  replying. Outline keeps Send the primary action. */}
-                <motion.div layoutId={HANDOVER_ACTION_ID} className="shrink-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={onReturnToAI}
-                    disabled={transitionState !== "idle" || !chatSocketReady}
-                  >
-                    <IconRobot className="size-4" />
-                    Return to AI
-                  </Button>
-                </motion.div>
                 <Button
                   type="button"
-                  variant={isInternalNoteMode ? "secondary" : "outline"}
+                  variant="outline"
                   size="sm"
-                  onClick={() => setIsInternalNoteMode((value) => !value)}
-                  disabled={transitionState !== "idle"}
+                  className="h-7 px-2 text-xs sm:h-8 sm:px-3 sm:text-sm"
+                  onClick={onSendInternalNote}
+                  disabled={!canSaveInternalNote || isSavingInternalNote}
+                  title="Save this text as an internal note"
                 >
-                  <IconNote className="size-4" />
-                  {isInternalNoteMode
-                    ? "Send as Reply"
-                    : "Send as Internal Note"}
+                  <IconNote className="size-3.5 sm:size-4" />
+                  <span className="hidden xl:inline">
+                    Send as Internal Note
+                  </span>
+                  <span className="xl:hidden">Note</span>
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  onClick={
-                    isInternalNoteMode ? onSendInternalNote : onSendAgentMessage
-                  }
-                  disabled={
-                    !canSend || (isInternalNoteMode && isSavingInternalNote)
-                  }
+                  className="h-7 px-2 text-xs sm:h-8 sm:px-3 sm:text-sm"
+                  onClick={onSendAgentMessage}
+                  disabled={!canSend}
                   title={
-                    isInternalNoteMode
-                      ? "Save internal note"
-                      : isUploadingAttachments
-                        ? "Waiting for upload…"
-                        : "Send message"
+                    isUploadingAttachments
+                      ? "Waiting for upload…"
+                      : "Send reply to customer"
                   }
                 >
-                  <IconSend className="size-4" />
+                  <IconSend className="size-3.5 sm:size-4" />
                   Send
                 </Button>
               </div>
@@ -874,7 +879,22 @@ export default function Support() {
   const [localThreads, setLocalThreads] = useState<ThreadWithReadState[]>(() =>
     normalizeThreads(FetchThreadsListData?.results),
   );
+  // The list Redux holds on arrival can be another page's (the Threads page
+  // shares it). Picking a chat from it falls back to its first one and
+  // rewrites ?chat= before this page's own list lands, so a deep link to a
+  // chat lost its target.
+  const [listOnArrival] = useState(FetchThreadsListData);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  // Below `lg` there is room for the chat list or the conversation, not
+  // both. This only picks which one shows there. A chat id in the URL (a
+  // deep link, or a refresh after the user opened one) shows the
+  // conversation; with none, it shows the list. That only holds because
+  // narrow screens never open a chat on their own — see `fallbackThreadId`
+  // — so an id in the URL means the user chose it.
+  const isBelowLg = useIsBelowLg();
+  const [portraitView, setPortraitView] = useState<"list" | "conversation">(
+    chatParam ? "conversation" : "list",
+  );
   const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
   const [handlerEvents, setHandlerEvents] = useState<HandlerEvent[]>([]);
   const [connectedAgent, setConnectedAgent] = useState<string | null>(null);
@@ -885,12 +905,17 @@ export default function Support() {
   const [transitionState, setTransitionState] = useState<
     "idle" | "taking_over" | "returning_to_ai"
   >("idle");
-  const [agentMessage, setAgentMessage] = useState("");
-  const [noteMessage, setNoteMessage] = useState("");
+  // One draft for both a reply and an internal note: what is typed is sent
+  // as whichever the agent picks.
+  const [composerMessage, setComposerMessage] = useState("");
   const [isCustomerTyping, setIsCustomerTyping] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentUpload[]>([]);
 
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  // Below `xl` the customer details open as a sheet from the header.
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [threadListWidth, setThreadListWidth] = useState(320);
+  const [customerPanelWidth, setCustomerPanelWidth] = useState(380);
   const [threadSearch, setThreadSearch] = useState("");
   const [debouncedThreadSearch, setDebouncedThreadSearch] = useState("");
   const [readFilter, setReadFilter] = useState<ThreadFilter>(() => {
@@ -912,7 +937,38 @@ export default function Support() {
     string | number | null
   >(null);
 
-  const { data: session, status: sessionStatus } = useSession();
+  // Drag either pane's inner edge; widths stay within sane bounds and are
+  // not persisted.
+  const startResize = useCallback(
+    (side: "threads" | "customer", event: ReactPointerEvent) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const initialWidth =
+        side === "threads" ? threadListWidth : customerPanelWidth;
+      const handleMove = (moveEvent: PointerEvent) => {
+        const delta = moveEvent.clientX - startX;
+        const nextWidth =
+          side === "threads" ? initialWidth + delta : initialWidth - delta;
+        const boundedWidth = Math.min(
+          side === "threads" ? 420 : 520,
+          Math.max(side === "threads" ? 260 : 280, nextWidth),
+        );
+        if (side === "threads") setThreadListWidth(boundedWidth);
+        else setCustomerPanelWidth(boundedWidth);
+      };
+      const stopResize = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", stopResize);
+        document.body.style.cursor = "";
+      };
+      document.body.style.cursor = "col-resize";
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", stopResize, { once: true });
+    },
+    [customerPanelWidth, threadListWidth],
+  );
+
+  const { data: session } = useSession();
   // Same rules as the nav (see `can`): admins always may; everyone else needs
   // the permission from their role. The backend enforces this too — checking
   // here spares a round trip and says why.
@@ -989,14 +1045,15 @@ export default function Support() {
     connectedAgentNameRef.current = connectedAgentName;
   }, [connectedAgentName]);
 
-  // Only admins and supervisors can reassign, and only they need the agent list.
-  // Fetch the shared company staff roster from Redux so the assignee filter and
-  // reassignment controls use the same source of truth.
+  // Only admins and supervisors can reassign, and only they need the agent list
+  // (the staff API refuses everyone else). Fetch the shared company staff roster
+  // from Redux so the assignee filter and reassignment controls use the same
+  // source of truth. Keyed on the boolean, not the session object, so a session
+  // refresh doesn't fetch it again.
   useEffect(() => {
-    if (sessionStatus !== "authenticated") return;
-    if (!session?.user) return;
+    if (!canReassign) return;
     void dispatch(FetchStaff());
-  }, [sessionStatus, session?.user, dispatch]);
+  }, [canReassign, dispatch]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const connectedAgentRef = useRef<string | null>(null);
@@ -1013,7 +1070,7 @@ export default function Support() {
   const [appliedChatParam, setAppliedChatParam] = useState<string | null>(null);
 
   // Generate a unique client ID for this session. This is used to identify messages sent by this client, so we can ignore them when they come back from the server.
-  const [clientID] = useState<string | null>(crypto.randomUUID());
+  const [clientID] = useState<string | null>(randomId());
 
   // Reset the socket-mutable copy when Redux supplies a new response. React
   // applies this guarded render-time adjustment before committing children,
@@ -1023,7 +1080,10 @@ export default function Support() {
     setLocalThreads(normalizeThreads(FetchThreadsListData?.results));
   }
 
-  const threadsReady = FetchThreadsIsSuccess && !FetchThreadsIsLoading;
+  const threadsReady =
+    FetchThreadsIsSuccess &&
+    !FetchThreadsIsLoading &&
+    FetchThreadsListData !== listOnArrival;
   const hasAppliedFilters = hasAppliedThreadFilters(appliedThreadFilters);
   const activeReadFilter =
     threadsReady &&
@@ -1044,7 +1104,11 @@ export default function Support() {
   const urlThreadExists =
     !!chatParam &&
     filterScopedThreads.some((thread) => thread.id === chatParam);
-  const fallbackThreadId = filterScopedThreads[0]?.id ?? null;
+  // No first-chat default on a narrow screen: there the list is the landing
+  // view and a chat opens only when tapped.
+  const fallbackThreadId = isBelowLg
+    ? null
+    : (filterScopedThreads[0]?.id ?? null);
   const desiredThreadId =
     threadsReady && (urlThreadExists || fallbackThreadId)
       ? urlThreadExists
@@ -1234,6 +1298,16 @@ export default function Support() {
           if (activeThreadIdRef.current === activeThreadId) {
             setThreadMessages(result.messages ?? []);
             setHandlerEvents(result.handler_events ?? []);
+            // Refresh the typing state from the thread details. The list can
+            // still contain `true` when the AI finished while this thread was
+            // not open and therefore had no active chat socket.
+            setLocalThreads((prev) =>
+              prev.map((thread) =>
+                thread.id === activeThreadId
+                  ? { ...thread, ai_responding: result.ai_responding }
+                  : thread,
+              ),
+            );
           }
         })
         .catch(() => {
@@ -1286,7 +1360,8 @@ export default function Support() {
   }, [activeThreadId, canHandleChats]);
 
   // Admin and supervisor: hands the chat to another agent. Sent over the same
-  // handler_change channel as Take Over, naming the agent to assign.
+  // handler_change channel as Take Over, naming the agent to assign. An empty
+  // email is the picker's "Unassigned": the chat goes back to the AI.
   const handleReassign = useCallback(
     (email: string) => {
       if (!canReassign) {
@@ -1306,12 +1381,13 @@ export default function Support() {
       }
 
       try {
-        setTransitionState("taking_over");
+        const assigningToAI = !email;
+        setTransitionState(assigningToAI ? "returning_to_ai" : "taking_over");
         wsRef.current.send(
           JSON.stringify({
             action_type: "handler_change",
-            chat_handler: "human",
-            chat_handler_user: email,
+            chat_handler: assigningToAI ? "ai" : "human",
+            ...(assigningToAI ? {} : { chat_handler_user: email }),
           }),
         );
       } catch (error) {
@@ -1400,7 +1476,7 @@ export default function Support() {
   );
 
   const handleSendAgentMessage = useCallback(() => {
-    const message = agentMessage.trim();
+    const message = composerMessage.trim();
     const isUploadingAttachments = attachments.some(
       (attachment) => attachment.status === "uploading",
     );
@@ -1428,12 +1504,17 @@ export default function Support() {
       )
       .map((attachment) => attachment.url as string);
 
-    if ((!message && imageUrls.length === 0) || !wsRef.current) {
+    if (!message && imageUrls.length === 0) return;
+
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("Chat connection unavailable", {
+        description: "Please wait for the chat connection, then try again.",
+      });
       return;
     }
 
     handleThreadMessageAdded({
-      id: crypto.randomUUID(),
+      id: randomId(),
       role: "assistant",
       message: message,
       created_at: new Date().toISOString(),
@@ -1450,11 +1531,11 @@ export default function Support() {
       }),
     );
 
-    setAgentMessage("");
+    setComposerMessage("");
     setAttachments([]);
     setIsEmojiPickerOpen(false);
   }, [
-    agentMessage,
+    composerMessage,
     attachments,
     clientID,
     handleThreadMessageAdded,
@@ -1462,12 +1543,11 @@ export default function Support() {
     session?.user?.name,
   ]);
 
+  // Any agent may add a note, whoever holds the chat: the backend checks
+  // only that the thread is active.
   const handleSendInternalNote = useCallback(async () => {
-    const message = noteMessage.trim();
+    const message = composerMessage.trim();
     if (!message || !activeThreadId) return;
-    // Notes are allowed while the AI handles the chat (nobody holds it) or
-    // when you hold it; never on a chat another agent holds.
-    if (connectedAgent && connectedAgent !== session?.user?.email) return;
 
     try {
       const note = await dispatch(
@@ -1475,18 +1555,11 @@ export default function Support() {
       ).unwrap();
 
       handleThreadMessageAdded(note);
-      setNoteMessage("");
+      setComposerMessage("");
     } catch {
       // The thunk displays the API error and keeps the note available to retry.
     }
-  }, [
-    activeThreadId,
-    connectedAgent,
-    dispatch,
-    handleThreadMessageAdded,
-    noteMessage,
-    session?.user?.email,
-  ]);
+  }, [activeThreadId, dispatch, handleThreadMessageAdded, composerMessage]);
 
   const handleReplyWithAI = useCallback(
     (message_id: number | string) => {
@@ -1520,7 +1593,7 @@ export default function Support() {
       }
 
       const newAttachments: AttachmentUpload[] = files.map((file) => ({
-        id: crypto.randomUUID(),
+        id: randomId(),
         file,
         previewUrl: URL.createObjectURL(file),
         url: null,
@@ -1534,7 +1607,7 @@ export default function Support() {
   );
 
   const handleEmojiSelect = useCallback((emoji: string) => {
-    setAgentMessage((prev) => `${prev}${emoji}`);
+    setComposerMessage((prev) => `${prev}${emoji}`);
     setIsEmojiPickerOpen(false);
   }, []);
 
@@ -1568,8 +1641,10 @@ export default function Support() {
     (threadId: string) => {
       // Close the previously open thread's chat socket immediately on click,
       // rather than waiting for the effect below to notice the id changed.
-      wsRef.current?.close();
-      wsRef.current = null;
+      if (threadId !== activeThreadIdRef.current) {
+        wsRef.current?.close();
+        wsRef.current = null;
+      }
       setLocalThreads((prev) =>
         prev.map((thread) =>
           thread.id === threadId && thread.is_read === false
@@ -1578,6 +1653,7 @@ export default function Support() {
         ),
       );
       setSelectedThreadId(threadId);
+      setPortraitView("conversation");
       setAttachments([]);
       setAppliedChatParam(threadId);
       router.replace(`${pathname}?chat=${encodeURIComponent(threadId)}`, {
@@ -1690,6 +1766,10 @@ export default function Support() {
 
   useSupportDashboardEvents((event) => {
     if (event.action_type === "message") {
+      if (!event.data.is_active) {
+        removeClosedThread(event.data.thread_id);
+        return;
+      }
       upsertThreadFromMessage(event.data);
       return;
     }
@@ -1739,7 +1819,9 @@ export default function Support() {
       return;
     }
 
-    removeClosedThread(event.data.thread_id);
+    if (event.action_type === "thread_closed") {
+      removeClosedThread(event.data.thread_id);
+    }
   });
 
   // ---- Per-thread chat socket: opens/closes as the selected thread changes. ----
@@ -1899,7 +1981,7 @@ export default function Support() {
           setHandlerEvents((prev) => [
             ...prev,
             {
-              id: crypto.randomUUID(),
+              id: randomId(),
               action: data?.chat_handler === "human" ? "assigned" : "released",
               from_agent_name: previousAgentName,
               to_agent_name: nextAgentName,
@@ -2025,10 +2107,15 @@ export default function Support() {
     session?.user?.access_token,
   ]);
 
+  // Below `lg` the conversation shows only when a chat is open and chosen;
+  // otherwise the list does.
+  const showConversationBelowLg =
+    portraitView === "conversation" && activeThreadId !== null;
+
   return (
     <SidebarProvider
-      style={{ "--sidebar-width": "350px" } as CSSProperties}
-      className="h-svh min-h-0 w-full overflow-hidden"
+      style={{ "--sidebar-width": `${threadListWidth}px` } as CSSProperties}
+      className="h-app-screen min-h-0 w-full overflow-hidden"
     >
       {/* Conversations list — the nested sidebar from the sidebar-09 block. */}
       {/* The list panel is content, not chrome: white, with a 4rem header
@@ -2036,17 +2123,22 @@ export default function Support() {
           the app's own navigation stays on the grey sidebar surface. */}
       <Sidebar
         collapsible="none"
-        className="hidden border-r bg-background md:flex"
+        className={cn(
+          "relative w-full border-r bg-background desktop:flex desktop:w-(--sidebar-width)",
+          showConversationBelowLg ? "hidden" : "flex",
+        )}
       >
+        <div
+          role="separator"
+          aria-label="Resize thread list"
+          onPointerDown={(event) => startResize("threads", event)}
+          className="absolute inset-y-0 right-[-3px] z-20 hidden w-1 cursor-col-resize desktop:block"
+        />
         <SidebarHeader className="gap-0 p-0">
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
             <CardTitle className="flex items-center gap-2">
-              <IconMessage2 className="size-4" />
-              Active Chats
+              Live chats
             </CardTitle>
-            {localThreads.length > 0 && (
-              <Badge variant="secondary">{localThreads.length}</Badge>
-            )}
           </div>
 
           <div className="flex flex-col gap-2.5 border-b px-4 py-2.5">
@@ -2074,7 +2166,11 @@ export default function Support() {
                   <Button
                     variant="outline"
                     size="icon-sm"
-                    className="relative shrink-0"
+                    className={cn(
+                      "relative shrink-0",
+                      hasAppliedThreadFilters(appliedThreadFilters) &&
+                        ACTIVE_FILTER_STYLE,
+                    )}
                     aria-label="Filter conversations"
                   >
                     <IconFilter className="size-4" />
@@ -2085,7 +2181,10 @@ export default function Support() {
                     ) : null}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 p-0">
+                <PopoverContent
+                  align="end"
+                  className="w-[calc(100vw-2rem)] max-w-80 p-0"
+                >
                   <div className="border-b px-4 py-3">
                     <CardTitle>Filter Conversations</CardTitle>
                   </div>
@@ -2146,12 +2245,12 @@ export default function Support() {
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="flex items-end gap-3 border-b border-border/70">
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/60 p-1">
               {(
                 [
-                  { key: "needs_human", label: "Needs human" },
+                  { key: "needs_human", label: "Human" },
                   { key: "ai", label: "AI" },
-                  { key: "with_agent", label: "With agent" },
+                  { key: "with_agent", label: "Agent" },
                   { key: "all", label: "All" },
                 ] as const
               ).map((option) => (
@@ -2183,10 +2282,10 @@ export default function Support() {
                     });
                   }}
                   className={cn(
-                    "-mb-px flex shrink-0 items-center gap-1 border-b-2 px-0.5 pb-2 pt-1 text-xs font-medium transition-colors",
+                    "flex min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium whitespace-nowrap transition-colors",
                     activeReadFilter === option.key
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground",
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {option.label}
@@ -2234,6 +2333,18 @@ export default function Support() {
                     <ConversationRow
                       key={thread.id}
                       active={thread.id === activeThreadId}
+                      // A stripe down the selected row: red while the chat
+                      // waits for a human, the brand colour otherwise.
+                      activeClassName={
+                        thread.need_escalation
+                          ? "-mx-2 w-[calc(100%+1rem)] rounded-none border-l-4 border-red-600 bg-red-50 pl-4! pr-5! hover:bg-red-50 dark:border-red-400 dark:bg-red-950/30 dark:hover:bg-red-950/30"
+                          : "-mx-2 w-[calc(100%+1rem)] rounded-none border-l-4 border-primary bg-primary/5 pl-4! pr-5! hover:bg-primary/[0.03] dark:bg-primary/10 dark:hover:bg-primary/10"
+                      }
+                      hoverClassName={
+                        thread.need_escalation
+                          ? "-mx-2 w-[calc(100%+1rem)] rounded-none pl-5! pr-5! hover:bg-red-50 dark:hover:bg-red-950/30"
+                          : "-mx-2 w-[calc(100%+1rem)] rounded-none pl-5! pr-5! hover:bg-primary/[0.03] dark:hover:bg-primary/10"
+                      }
                       onSelect={() => handleSelectThread(thread.id)}
                       unread={isUnread}
                       avatar={
@@ -2263,12 +2374,15 @@ export default function Support() {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Badge
                             variant="secondary"
-                            className="h-5 rounded-md px-1.5 text-xs font-normal"
+                            className={cn(
+                              "h-5 rounded-md border-0 px-1.5 text-xs font-medium",
+                              thread.chat_handler === "human"
+                                ? "bg-blue-100 text-blue-700 hover:bg-blue-100"
+                                : "bg-violet-100 text-violet-700 hover:bg-violet-100",
+                            )}
                           >
-                            {thread.chat_handler === "human" ? (
+                            {thread.chat_handler === "human" && (
                               <IconHeadset className="size-3" />
-                            ) : (
-                              <IconRobot className="size-3" />
                             )}
                             {handlerLabel}
                           </Badge>
@@ -2315,13 +2429,41 @@ export default function Support() {
       </Sidebar>
 
       {/* Conversation + thread details. */}
-      <SidebarInset className="min-h-0 overflow-hidden">
+      <SidebarInset
+        className={cn(
+          "min-h-0 min-w-0 overflow-hidden desktop:flex",
+          showConversationBelowLg ? "flex" : "hidden",
+        )}
+      >
         {activeThreadId ? (
           <div className="flex h-full min-h-0">
             <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-              <header className="flex h-16 shrink-0 items-center border-b bg-background px-4">
-                <div className="flex w-full items-center justify-between gap-3">
+              <header className="flex h-16 shrink-0 items-center border-b bg-background px-2 sm:px-4">
+                <div className="flex w-full min-w-0 items-center justify-between gap-1.5 sm:gap-3">
                   <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Back to chat list"
+                      className="-ml-2 shrink-0 desktop:hidden"
+                      onClick={() => {
+                        // Closes the chat, not just the pane: its id would
+                        // otherwise stay in the URL and a refresh would
+                        // reopen it.
+                        setPortraitView("list");
+                        const params = new URLSearchParams(
+                          searchParams?.toString() ?? "",
+                        );
+                        params.delete("chat");
+                        const query = params.toString();
+                        router.replace(
+                          query ? `${pathname}?${query}` : (pathname ?? "/"),
+                          { scroll: false },
+                        );
+                      }}
+                    >
+                      <IconArrowLeft />
+                    </Button>
                     <CustomerAvatar
                       name={
                         selectedThread?.customer?.name ||
@@ -2355,6 +2497,9 @@ export default function Support() {
                     {/* Where they are browsing from, beside who they are —
                         context for the person already on screen. */}
                     <SessionFacts userMetadata={FetchUserMetadataData} />
+                    <CustomerDetailsButton
+                      onClick={() => setIsDetailsOpen(true)}
+                    />
                   </div>
                 </div>
               </header>
@@ -2365,11 +2510,12 @@ export default function Support() {
                   </div>
                 ) : (
                   <div className="flex min-h-0 flex-1 flex-col">
-                    <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-1 sm:p-3">
                       {threadMessages.length > 0 ? (
-                        <MessagePan
+                        <LiveMessagePan
                           messages={threadMessages}
                           handlerEvents={handlerEvents}
+                          customerName={selectedThread?.customer?.name}
                           onReplyWithAI={
                             connectedAgent === session?.user?.email
                               ? handleReplyWithAI
@@ -2379,12 +2525,31 @@ export default function Support() {
                         />
                       ) : (
                         <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
-                          <IconMessage2 className="mb-1 size-6 text-muted-foreground opacity-40" />
-                          <Typography variant="small" as="p">
-                            Nothing here yet
+                          <div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <IconMessageDots className="size-8" stroke={1.5} />
+                          </div>
+                          <Typography
+                            variant="small"
+                            as="p"
+                            className="text-lg font-semibold"
+                          >
+                            No messages yet
                           </Typography>
-                          <Typography variant="muted">
-                            Messages for this thread will show up here.
+                          <Typography
+                            variant="muted"
+                            className="max-w-md text-sm leading-relaxed"
+                          >
+                            {selectedThread?.customer?.name || "This customer"}{" "}
+                            opened the chat but hasn&apos;t written anything.
+                            {selectedThread?.chat_handler === "human" &&
+                            selectedThread.chat_handler_user?.name
+                              ? ` ${
+                                  selectedThread.chat_handler_user.email?.toLowerCase() ===
+                                  session?.user?.email?.toLowerCase()
+                                    ? "You"
+                                    : selectedThread.chat_handler_user.name
+                                } will reply as soon as they do.`
+                              : " The AI Assistant will reply as soon as they do."}
                           </Typography>
                         </div>
                       )}
@@ -2402,7 +2567,7 @@ export default function Support() {
                       </div>
                     )}
                     {isCustomerTyping && (
-                      <div className="shrink-0 border-t bg-background px-4 py-2">
+                      <div className="flex shrink-0 justify-start border-t bg-background px-4 py-2">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span className="flex gap-1">
                             <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.2s]" />
@@ -2426,19 +2591,19 @@ export default function Support() {
                       <ThreadChatControls
                         activeThreadId={activeThreadId}
                         isThreadActive={selectedThread.is_active}
+                        hasMessages={threadMessages.length > 0}
                         className="border-t"
                         connectedAgent={displayedConnectedAgent}
                         connectedAgentName={displayedConnectedAgentName}
                         user={session?.user?.email || null}
+                        userRole={session?.user?.role}
                         canReassign={canReassign}
                         agents={agents}
                         chatSocketReady={chatSocketReady}
                         onReassign={handleReassign}
                         transitionState={transitionState}
-                        agentMessage={agentMessage}
-                        setAgentMessage={setAgentMessage}
-                        noteMessage={noteMessage}
-                        setNoteMessage={setNoteMessage}
+                        composerMessage={composerMessage}
+                        setComposerMessage={setComposerMessage}
                         isSavingInternalNote={CreateInternalNoteIsLoading}
                         attachments={attachments}
                         isEmojiPickerOpen={isEmojiPickerOpen}
@@ -2459,17 +2624,36 @@ export default function Support() {
             </div>
 
             <CustomerDetailsPanel
+              open={isDetailsOpen}
+              onOpenChange={setIsDetailsOpen}
               cart={{ data: FetchCartData, loading: FetchCartDataIsLoading }}
+              dockedWidth={customerPanelWidth}
+              onResizeStart={(event) => startResize("customer", event)}
             />
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
-            <IconMessage2 className="mb-1 size-6 text-muted-foreground opacity-40" />
-            <Typography variant="small" as="p">
+            <div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <IconMessageDots className="size-8" stroke={1.5} />
+            </div>
+            <Typography
+              variant="small"
+              as="p"
+              className="text-lg font-semibold"
+            >
               No active chats
             </Typography>
-            <Typography variant="muted">
-              New active chats will appear here when customers message in.
+            <Typography
+              variant="muted"
+              className="max-w-md text-sm leading-relaxed"
+            >
+              {activeReadFilter === "needs_human"
+                ? "Chats needing human help will appear here."
+                : activeReadFilter === "ai"
+                  ? "AI-handled chats will appear here."
+                  : activeReadFilter === "with_agent"
+                    ? "Chats assigned to agents will appear here."
+                    : "New active chats will appear here when customers message in."}
             </Typography>
           </div>
         )}

@@ -12,6 +12,7 @@ import {
   sessionResolutionVerdict,
   chatThreadAssignment,
   authUser,
+  supportTag,
 } from "@/lib/drizzle/schema";
 import {
   and,
@@ -44,6 +45,7 @@ export type ListThreadsFilters = {
   feedback_rating?: string; // very_bad | bad | neutral | good | excellent
   tags?: string[]; // matches threads tagged with ANY of the given tags
   handled_by?: string; // ai | human
+  has_agent?: string; // a human agent took the thread over at any point
   assignee?: string[]; // auth.User email values
   need_escalation?: string;
 };
@@ -66,9 +68,11 @@ function parseDateTimeFilter(
   value: string,
   edge: "start" | "end",
 ): Date | undefined {
+  // A bare date is an IST calendar day, like Django's created_at__date__range
+  // (TIME_ZONE = "Asia/Kolkata") and the dashboard's localDateRange.
   if (DATE_ONLY_RE.test(value)) {
     return new Date(
-      `${value}T${edge === "start" ? "00:00:00.000Z" : "23:59:59.999Z"}`,
+      `${value}T${edge === "start" ? "00:00:00.000" : "23:59:59.999"}+05:30`,
     );
   }
 
@@ -123,26 +127,17 @@ export type ThreadListItem = {
 };
 
 /**
- * Port of ThreadListAPIView.get_queryset + ThreadListSerializer
- * (analytics/views.py / analytics/serializers.py).
+ * The WHERE conditions for a thread list, shared by the list itself and by
+ * the tag counts above it, so both always agree on which threads are in play.
+ * The query must join chat_customer, auth_user (handler) and store.
  *
- * Applies the same filters and ordering ("-created_at") as the Django view,
- * annotates total_messages (Count("messages")), and returns the rows for the
- * requested page along with the total count (pre-pagination) so the caller can
- * build the DRF paginated envelope.
- *
- * Serializer fidelity:
- *   - customer: { id | null, name: "first last".strip() | null, email | null }
- *   - tags: AiInsights.tags for the thread (first row) or []
- *   - last_message: latest role="assistant" message text, or "" when none.
- *   - followup_level / is_active / total_messages / created_at / ended_at as-is.
+ * @param includeTags - false leaves the tag filter out, for counting tags
+ *   against every other filter (selecting a tag must not hide its siblings).
  */
-export async function list_threads(
+function buildThreadConditions(
   filters: ListThreadsFilters,
-  page: number,
-  pageSize: number,
-): Promise<{ count: number; results: ThreadListItem[] }> {
-  const db = getDb();
+  includeTags = true,
+): SQL[] {
   const conditions: SQL[] = [];
 
   const storeScope = storeIdScope(chatThread.storeId, filters.store_code);
@@ -222,6 +217,18 @@ export async function list_threads(
     conditions.push(eq(chatThread.chatHandler, filters.handled_by));
   }
 
+  // has_agent: a takeover records to_agent_id, so this still finds threads
+  // later handed back to the AI (unlike handled_by, the current handler).
+  if (filters.has_agent === "true") {
+    conditions.push(
+      sql`EXISTS (SELECT 1 FROM ${chatThreadAssignment} WHERE ${chatThreadAssignment.threadId} = ${chatThread.id} AND ${chatThreadAssignment.toAgentId} IS NOT NULL)`,
+    );
+  } else if (filters.has_agent === "false") {
+    conditions.push(
+      sql`NOT EXISTS (SELECT 1 FROM ${chatThreadAssignment} WHERE ${chatThreadAssignment.threadId} = ${chatThread.id} AND ${chatThreadAssignment.toAgentId} IS NOT NULL)`,
+    );
+  }
+
   if (filters.assignee?.length) {
     conditions.push(inArray(authUser.email, filters.assignee));
   }
@@ -250,7 +257,7 @@ export async function list_threads(
 
   // Any-match: a thread qualifies if its AiInsights.tags contains at least
   // one of the selected tags.
-  if (filters.tags && filters.tags.length) {
+  if (includeTags && filters.tags && filters.tags.length) {
     const tagConditions = filters.tags.map(
       (tag) => sql`${aiInsights.tags} @> ${JSON.stringify([tag])}::jsonb`,
     );
@@ -258,6 +265,32 @@ export async function list_threads(
       sql`EXISTS (SELECT 1 FROM ${aiInsights} WHERE ${aiInsights.threadId} = ${chatThread.id} AND (${sql.join(tagConditions, sql` OR `)}))`,
     );
   }
+
+  return conditions;
+}
+
+/**
+ * Port of ThreadListAPIView.get_queryset + ThreadListSerializer
+ * (analytics/views.py / analytics/serializers.py).
+ *
+ * Applies the same filters and ordering ("-created_at") as the Django view,
+ * annotates total_messages (Count("messages")), and returns the rows for the
+ * requested page along with the total count (pre-pagination) so the caller can
+ * build the DRF paginated envelope.
+ *
+ * Serializer fidelity:
+ *   - customer: { id | null, name: "first last".strip() | null, email | null }
+ *   - tags: AiInsights.tags for the thread (first row) or []
+ *   - last_message: latest role="assistant" message text, or "" when none.
+ *   - followup_level / is_active / total_messages / created_at / ended_at as-is.
+ */
+export async function list_threads(
+  filters: ListThreadsFilters,
+  page: number,
+  pageSize: number,
+): Promise<{ count: number; results: ThreadListItem[] }> {
+  const db = getDb();
+  const conditions = buildThreadConditions(filters);
 
   const whereClause = conditions.length ? and(...conditions) : undefined;
 
@@ -422,27 +455,75 @@ export async function list_threads(
   return { count: total, results };
 }
 
-/**
- * Distinct AiInsights.tags values across a store's threads — powers the
- * Threads page's tags filter option list.
- */
-export async function list_thread_tags(storeCode?: string): Promise<string[]> {
-  const db = getDb();
-  const conditions: SQL[] = [];
+export type ThreadTagOption = {
+  id: number;
+  name: string;
+  color: string;
+  description: string;
+  /** Threads in the current result set that carry the tag. */
+  count: number;
+};
 
+/**
+ * The tags to offer as chips above the Threads list: the active support tags
+ * that at least one thread's analysis carries (ai_insights.tags), each with
+ * how many threads. Colour and description come from support_tag.
+ *
+ * Counted against every filter except the tag filter itself, so the counts
+ * follow the search, dates and the rest, while picking a tag leaves its
+ * siblings visible. Most used first. Matches names exactly, like the tag
+ * filter (`@>`), so a chip's count is what clicking it lists.
+ */
+export async function list_thread_tags(
+  filters: ListThreadsFilters,
+): Promise<ThreadTagOption[]> {
+  const conditions = buildThreadConditions(filters, false);
+
+  const rows = await getDb()
+    .select({
+      id: supportTag.id,
+      name: supportTag.name,
+      color: supportTag.color,
+      description: supportTag.description,
+      count: sql<number>`count(DISTINCT ${chatThread.id})`.mapWith(Number),
+    })
+    .from(chatThread)
+    .leftJoin(chatCustomer, eq(chatThread.customerId, chatCustomer.id))
+    .leftJoin(authUser, eq(chatThread.chatHandlerUserId, authUser.id))
+    .innerJoin(store, eq(chatThread.storeId, store.id))
+    .innerJoin(aiInsights, eq(aiInsights.threadId, chatThread.id))
+    .innerJoin(
+      supportTag,
+      and(
+        eq(supportTag.isActive, true),
+        sql`${aiInsights.tags} @> jsonb_build_array(${supportTag.name})`,
+      ),
+    )
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(supportTag.id)
+    .orderBy(desc(sql`count(DISTINCT ${chatThread.id})`), asc(supportTag.name));
+
+  return rows;
+}
+
+/** Count active chats and active chats waiting for human support. */
+export async function get_thread_counts(storeCode?: string) {
+  const conditions = [eq(chatThread.isActive, true)];
   const storeScope = storeIdScope(chatThread.storeId, storeCode);
   if (storeScope) conditions.push(storeScope);
 
-  const rows = await db
-    .selectDistinct({
-      tag: sql<string>`jsonb_array_elements_text(${aiInsights.tags})`,
+  const [counts] = await getDb()
+    .select({
+      active: count(),
+      needsHuman:
+        sql<number>`count(*) filter (where ${chatThread.needEscalation} = true)`.mapWith(
+          Number,
+        ),
     })
-    .from(aiInsights)
-    .innerJoin(chatThread, eq(aiInsights.threadId, chatThread.id))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(sql`1`);
+    .from(chatThread)
+    .where(and(...conditions));
 
-  return rows.map((row) => row.tag).filter(Boolean);
+  return counts;
 }
 
 type ThreadMessage = {
@@ -571,10 +652,12 @@ export async function get_thread_details(
       json_content: chatHistory.jsonContent,
       image_url: chatHistory.imageUrl,
       message_type: chatHistory.messageType,
+      // Name only, never the email: transcripts show who replied, not how
+      // to reach them.
       agent_name: sql<string | null>`case
         when nullif(concat_ws(' ', ${authUser.firstName}, ${authUser.lastName}), '') is not null
-          then concat(concat_ws(' ', ${authUser.firstName}, ${authUser.lastName}), ' (', ${authUser.email}, ')')
-        else nullif(${authUser.email}, '')
+          then concat_ws(' ', ${authUser.firstName}, ${authUser.lastName})
+        else nullif(${authUser.username}, '')
       end`,
       confidence: chatHistory.confidence,
       source_used: chatHistory.sourceUsed,
@@ -845,13 +928,23 @@ export async function get_feedback_sequence(
   return { feedback: rows[0] ?? null };
 }
 
+/** A thread's tag with the colour the tag list gives it ("" when unlisted). */
+export type ThreadTagRecord = {
+  id?: number;
+  name: string;
+  color: string;
+  description: string;
+};
+
 /**
  * Port of TagsSerializer.
- * Returns AiInsights.tags for the thread (first row) or [].
+ * Returns AiInsights.tags for the thread (first row) or [], each name with
+ * its support_tag colour and description, matched by exact name like the
+ * Threads tag filter. A name the tag list does not have keeps no colour.
  */
 export async function get_thread_tags(
   thread_id: string,
-): Promise<{ tags: string[] }> {
+): Promise<{ tags: ThreadTagRecord[] }> {
   const db = getDb();
   const rows = await db
     .select({ tags: aiInsights.tags })
@@ -859,9 +952,27 @@ export async function get_thread_tags(
     .where(scopedThreadFilter(aiInsights.threadId, thread_id))
     .limit(1);
 
-  const tags =
-    rows.length && rows[0].tags != null ? (rows[0].tags as string[]) : [];
-  return { tags };
+  const names = (
+    rows.length && Array.isArray(rows[0].tags) ? rows[0].tags : []
+  ).filter((name): name is string => typeof name === "string");
+  if (!names.length) return { tags: [] };
+
+  const listed = await db
+    .select({
+      id: supportTag.id,
+      name: supportTag.name,
+      color: supportTag.color,
+      description: supportTag.description,
+    })
+    .from(supportTag)
+    .where(inArray(supportTag.name, names));
+  const byName = new Map(listed.map((tag) => [tag.name, tag]));
+
+  return {
+    tags: names.map(
+      (name) => byName.get(name) ?? { name, color: "", description: "" },
+    ),
+  };
 }
 
 export type UserMetadataData = {

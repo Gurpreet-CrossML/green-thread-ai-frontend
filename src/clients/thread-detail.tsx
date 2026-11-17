@@ -4,30 +4,25 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  IconAlertTriangle,
   IconArrowLeft,
-  IconBrain,
-  IconCalendarTime,
   IconCheck,
-  IconClockHour4,
-  IconHash,
-  IconListCheck,
+  IconChevronLeft,
   IconMessage2,
-  IconMessages,
-  IconSparkles,
-  IconTargetArrow,
-  IconThumbUp,
-  IconX,
-  type Icon,
+  IconShoppingBag,
 } from "@tabler/icons-react";
 
-import MessagePan from "@/components/custom/message-pan";
-import { CustomerAvatar } from "@/components/custom/customer-avatar";
-import { CustomerDetailsPanel } from "@/components/custom/customer-details-panel";
+import { ThreadCard } from "@/components/custom/thread-card";
+import { ConversationTranscript } from "@/components/custom/conversation-transcript";
+import ConversationMap from "@/components/custom/conversation-map";
+import { getInitials } from "@/components/custom/customer-avatar";
 import { SessionFacts } from "@/components/custom/customer-header";
-import { TagsCell } from "@/components/custom/threads-columns";
+import { TagBadge } from "@/components/custom/tag-badge";
+import { formatCartPrice } from "@/components/custom/thread-detail-panels";
+import {
+  toTagRecord,
+  type ThreadTag,
+} from "@/components/custom/threads-columns";
 import { InfoIcon } from "@/components/custom/info-icon";
-import { LoadingState } from "@/components/custom/loading-state";
 import {
   Empty,
   EmptyDescription,
@@ -35,20 +30,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Typography } from "@/components/ui/typography";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getDuration } from "@/lib/helpers";
 import { FEEDBACK_RATINGS } from "@/lib/config";
-import { formatDateTime, getDuration } from "@/lib/helpers";
-import { cn } from "@/lib/utils";
 import {
   FetchAIInsight,
   FetchCart,
@@ -58,284 +43,74 @@ import {
   FetchThreadDetails,
   FetchUserMetadata,
   type ThreadMessage,
+  type ThreadTagData,
 } from "@/redux/api-slice/thread-slice";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 
 /* ------------------------------------------------------------------ */
-/* Shared bits                                                         */
+/* Thread-detail presentation                                          */
 /* ------------------------------------------------------------------ */
 
-/**
- * One fact in the session strip. Labels are exposed through tooltips.
- *
- * Muted and on a single line on purpose: when was it, how long, how many
- * messages is reference data an agent checks occasionally. It used to be a
- * full card at the top of the page, which put the least-needed thing in the
- * most valuable place and pushed the conversation below the fold.
- */
-function MetaCell({
-  icon,
-  label,
+/** The resolution score as a ring, in the theme's primary colour. */
+function ResolutionRing({
   value,
-  mono = false,
-  loading,
+  compact = false,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-  loading?: boolean;
+  value: number;
+  compact?: boolean;
 }) {
+  const rate = Math.max(0, Math.min(100, value || 0));
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className="flex min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground"
-          aria-label={label}
-        >
-          <span className="shrink-0">{icon}</span>
-          {loading ? (
-            <Skeleton className="h-4 w-24" />
-          ) : (
-            <Typography
-              variant="caption"
-              className={cn("truncate", mono && "font-mono")}
-            >
-              {value}
-            </Typography>
-          )}
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Sections                                                            */
-/* ------------------------------------------------------------------ */
-
-/**
- * The heading of one section of the thread pane.
- *
- * Sections rather than cards: the pane was three stacked boxes inside a
- * bordered pane inside the page, and every nested edge cost width and made
- * the screen read as furniture rather than content. A tinted icon and a
- * rule carry the same separation without the frame.
- */
-function SectionHeader({
-  icon: Icon,
-  title,
-  info,
-  action,
-}: {
-  icon: Icon;
-  title: React.ReactNode;
-  info: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="sticky top-0 z-10 flex items-center gap-2.5 border-b bg-muted px-4 py-3">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="size-4" />
-      </span>
-      <div className="flex min-w-0 items-center gap-2">
-        <Typography variant="h6" as="h3" className="truncate">
-          {title}
-        </Typography>
-        <InfoIcon text={info} />
-      </div>
-      {action ? <div className="ml-auto shrink-0">{action}</div> : null}
-    </div>
-  );
-}
-
-/** Colored-dot list item for insight cases. */
-function InsightItem({
-  tone,
-  children,
-}: {
-  tone: "positive" | "negative" | "action";
-  children: React.ReactNode;
-}) {
-  return (
-    <li className="flex items-start gap-2 text-sm text-muted-foreground">
+    <span
+      aria-label={`${rate}% resolution score`}
+      className={`relative inline-flex shrink-0 items-center justify-center rounded-full text-primary ${
+        compact ? "size-11" : "size-14"
+      }`}
+      style={{
+        background: `conic-gradient(var(--primary) ${rate}%, color-mix(in oklab, var(--primary) 15%, transparent) 0)`,
+      }}
+    >
       <span
-        className={cn(
-          "mt-1.5 size-1.5 shrink-0 rounded-full",
-          tone === "positive" && "bg-emerald-500",
-          tone === "negative" && "bg-red-500",
-          tone === "action" && "bg-primary",
-        )}
+        className={`rounded-full bg-background ${compact ? "size-9" : "size-11"}`}
       />
-      {children}
-    </li>
-  );
-}
-
-/** A titled list of insight cases, or nothing when the AI found none. */
-function InsightGroup({
-  icon: Icon,
-  title,
-  tone,
-  items,
-}: {
-  icon: Icon;
-  title: string;
-  tone: "positive" | "negative" | "action";
-  items: string[];
-}) {
-  if (items.length === 0) return null;
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <Icon
-          className={cn(
-            "size-4",
-            tone === "positive" && "text-emerald-600 dark:text-emerald-500",
-            tone === "negative" && "text-red-600 dark:text-red-500",
-            tone === "action" && "text-primary",
-          )}
-        />
-        <Typography variant="small" as="h4">
-          {title}
-        </Typography>
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((item, index) => (
-          <InsightItem key={index} tone={tone}>
-            {item}
-          </InsightItem>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/**
- * The AI's read on the conversation, above the transcript.
- *
- * First on the page because it answers in a paragraph what the transcript
- * answers in fifty messages — an agent picking up a thread wants the recap
- * and the score before deciding whether to read the whole exchange.
- */
-function AIInsightsSection({
-  summary,
-  summaryLoading,
-  nextActionableItems,
-  resolutionSuccessRate,
-  reasonForScore,
-  overperformingCases,
-  underperformingCases,
-  insightsLoading,
-}: {
-  summary: string;
-  summaryLoading: boolean;
-  nextActionableItems: string[];
-  resolutionSuccessRate: string;
-  reasonForScore: string;
-  overperformingCases: string[];
-  underperformingCases: string[];
-  insightsLoading: boolean;
-}) {
-  const rate = Math.min(100, Math.max(0, parseInt(resolutionSuccessRate) || 0));
-
-  return (
-    <section className="shrink-0">
-      <SectionHeader
-        icon={IconBrain}
-        title="AI Insights"
-        info="The AI's read on this conversation — a recap of what happened, how well it resolved the request, and where it struggled."
-      />
-
-      <div className="flex flex-col gap-4 p-4">
-        {/* Recap and score side by side: the two things read first, and
-            the only two tinted, so the eye lands on them before the
-            plainer lists below. */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
-            <div className="flex items-center gap-2 text-primary">
-              <IconSparkles className="size-4" />
-              <Typography variant="small" as="h4">
-                Summary
-              </Typography>
-            </div>
-            {summaryLoading ? (
-              <Skeleton className="h-16 w-full" />
-            ) : (
-              <Typography variant="muted" className="leading-relaxed">
-                {summary || "No summary available for this conversation."}
-              </Typography>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
-            <div className="flex items-center gap-2 text-primary">
-              <IconTargetArrow className="size-4" />
-              <Typography variant="small" as="h4">
-                Resolution Score
-              </Typography>
-            </div>
-            {insightsLoading ? (
-              <Skeleton className="h-16 w-full" />
-            ) : (
-              <>
-                <Typography
-                  variant="h3"
-                  as="span"
-                  className="text-primary tabular-nums"
-                >
-                  {rate && rate > 0 ? `${rate}%` : "N/A"}
-                </Typography>
-                <Progress value={rate} />
-                {reasonForScore && (
-                  <Typography variant="muted" className="leading-relaxed">
-                    {reasonForScore}
-                  </Typography>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {insightsLoading ? (
-          <LoadingState className="py-6" />
-        ) : (
-          <>
-            <InsightGroup
-              icon={IconListCheck}
-              title="Suggested Follow-ups"
-              tone="action"
-              items={nextActionableItems}
-            />
-
-            {/* What worked and what did not, side by side — they are two
-                answers to one question and read as a pair. */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <InsightGroup
-                icon={IconThumbUp}
-                title="What Went Well"
-                tone="positive"
-                items={overperformingCases}
-              />
-              <InsightGroup
-                icon={IconAlertTriangle}
-                title="What To Improve"
-                tone="negative"
-                items={underperformingCases}
-              />
-            </div>
-          </>
-        )}
-      </div>
-    </section>
+      <span
+        className={`absolute font-bold tabular-nums ${
+          compact ? "text-[11px]" : "text-[13px]"
+        }`}
+      >
+        {rate}%
+      </span>
+    </span>
   );
 }
 
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
+
+// Stable reference for "no tags yet". A fresh `[]` inside the selector is a new
+// object on every call, which makes react-redux warn and re-render.
+const EMPTY_TAGS: ThreadTag[] = [];
+
+/** "10:57 AM" */
+function formatClock(value: Date) {
+  return value
+    .toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(/\s/g, " ");
+}
+
+/** "15 Oct 2026, 10:57 AM", for the Thread details card. */
+function formatDayFirst(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  return `${date.getDate()} ${month} ${date.getFullYear()}, ${formatClock(date)}`;
+}
 
 export default function ThreadDetail({ threadId }: { threadId: string }) {
   const dispatch = useAppDispatch();
@@ -347,30 +122,29 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
   const { FetchThreadDetailsData, FetchThreadDetailsIsError } = useAppSelector(
     (state) => state.GetThreadReducer.FetchThreadDetailsState,
   );
-  const { FetchConversationSummaryData, FetchConversationSummaryIsLoading } =
-    useAppSelector(
-      (state) => state.GetThreadReducer.FetchConversationSummaryState,
-    );
-  const { FetchAIInsightData, FetchAIInsightIsLoading } = useAppSelector(
+  const { FetchConversationSummaryData } = useAppSelector(
+    (state) => state.GetThreadReducer.FetchConversationSummaryState,
+  );
+  const { FetchAIInsightData } = useAppSelector(
     (state) => state.GetThreadReducer.FetchAIInsightState,
   );
-  const { FetchCartData, FetchCartDataIsLoading } = useAppSelector(
+  const { FetchCartData } = useAppSelector(
     (state) => state.GetThreadReducer.FetchCartDataState,
   );
   const { FetchUserMetadataData, FetchUserMetadataIsLoading } = useAppSelector(
     (state) => state.GetThreadReducer.FetchUserMetadataState,
   );
-  const { FetchFeedbackSequenceData, FetchFeedbackSequenceIsLoading } =
-    useAppSelector(
-      (state) => state.GetThreadReducer.FetchFeedbackSequenceState,
-    );
+  const { FetchFeedbackSequenceData } = useAppSelector(
+    (state) => state.GetThreadReducer.FetchFeedbackSequenceState,
+  );
+  // Names from ai_insights.tags, colours from the tag list (support_tag).
   const threadTags = useAppSelector(
     (state) =>
       (
         state.GetThreadReducer.FetchTagsState as {
-          FetchTags?: { tags?: string[] };
+          FetchTags?: { tags?: ThreadTag[] };
         }
-      ).FetchTags?.tags ?? [],
+      ).FetchTags?.tags ?? EMPTY_TAGS,
   );
   const tagsLoading = useAppSelector(
     (state) => state.GetThreadReducer.FetchTagsState.FetchTagsIsLoading,
@@ -406,16 +180,20 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
   // The thread's own request is still out — or what is in the store belongs
   // to the thread we came from. Either way this screen has no basics yet,
   // so every section shows its own loader rather than the last thread's
-  // answer. Each section then falls back to its own request's flag.
+  // answer.
   const detailsLoading = !isThisThread;
-  const isResolved = details?.verdict?.verdict === "resolved";
+  // Breadcrumb title: the thread's own name, else what the customer first asked.
+  const threadTitle =
+    details?.name ||
+    threadMessages.find((message) => message.message_type === "user_message")
+      ?.message ||
+    "Conversation";
   const customerName =
     details?.customer_name || details?.customer_email || "Guest";
-  const feedback = FetchFeedbackSequenceData?.feedback;
-  const feedbackLabel = feedback
-    ? (FEEDBACK_RATINGS.find((rating) => rating.value === feedback.rating)
-        ?.label ?? null)
-    : null;
+  // The tags of a thread we navigated away from stay in the store until this
+  // thread's arrive, so show none until both are in.
+  const tags: ThreadTagData[] =
+    detailsLoading || tagsLoading ? [] : threadTags.map(toTagRecord);
 
   // Only a genuine failure replaces the screen. Everything else renders
   // the shell and fills in section by section.
@@ -438,227 +216,360 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
     );
   }
 
-  return (
-    // The same shell as Live Support: the thread on one
-    // side, who it is with on the other. It used to be one long column, so
-    // reading a conversation meant scrolling past the customer and then
-    // back down for their cart.
-    <div className="flex h-svh min-h-0 flex-col overflow-hidden border-y">
-      {/* Who the agent is talking to comes first — the same header Live
-          Support leads with, so a customer reads identically
-          whichever screen you reach them from. The thread's own subject
-          titles the Conversation card below, where it names the thing it
-          is the subject of. */}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Back to Threads"
-          onClick={() => router.back()}
-        >
-          <IconArrowLeft />
-        </Button>
+  const resolutionRate = Math.min(
+    100,
+    Math.max(
+      0,
+      parseInt(FetchAIInsightData?.resolution_success_rate || "0") || 0,
+    ),
+  );
+  const cartItems = FetchCartData?.updated_cart_data?.items ?? [];
+  const feedback = FetchFeedbackSequenceData?.feedback;
+  const feedbackComment = feedback?.feedback_message?.trim();
+  const improvements = FetchAIInsightData?.underperforming_cases ?? [];
+  const successes = FetchAIInsightData?.overperforming_cases ?? [];
+  const actions = FetchAIInsightData?.next_actionable_items ?? [];
+  const started = formatDayFirst(details?.created_at);
+  // Time only: GT does not record why or by whom a chat closed yet.
+  const endedAtDate = details?.ended_at ? new Date(details.ended_at) : null;
+  const ended = details?.is_active
+    ? "Ongoing"
+    : endedAtDate && !Number.isNaN(endedAtDate.getTime())
+      ? formatClock(endedAtDate)
+      : "—";
+  const duration =
+    getDuration(details?.created_at ?? null, details?.ended_at ?? null) || "—";
+  // "AI only" until a human agent appears in the handover history.
+  const handlerNames = Array.from(
+    new Set(
+      (details?.handler_events ?? []).flatMap((event) =>
+        [event.from_agent_name, event.to_agent_name].filter(
+          (name): name is string => Boolean(name),
+        ),
+      ),
+    ),
+  );
+  const handledBy = !details
+    ? "—"
+    : handlerNames.length
+      ? `AI + ${handlerNames.join(", ")}`
+      : "AI only";
 
-        <div className="flex min-w-0 items-center gap-2.5">
-          <CustomerAvatar name={customerName} online={details?.is_active} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1">
-              {detailsLoading ? (
-                <Skeleton className="h-5 w-32" />
-              ) : (
-                <CardTitle className="truncate leading-tight">
-                  {customerName}
-                </CardTitle>
-              )}
-            </div>
-            {/* Nothing rather than "no email on file" for a guest — the
-                avatar already says which this is. */}
-            {details?.customer_email ? (
-              <Typography variant="muted" className="truncate">
-                {details.customer_email}
-              </Typography>
-            ) : null}
+  const transcript = (
+    <ConversationTranscript
+      messages={threadMessages}
+      totalMessages={details?.total_messages}
+      loading={detailsLoading}
+      handlerEvents={details?.handler_events}
+      // Name only: the transcript labels the sender, never their email.
+      customerName={details?.customer_name}
+      closedAt={details?.is_active ? null : details?.ended_at}
+      closedCartItemCount={cartItems.length}
+    />
+  );
+  const review = (
+    <div className="space-y-4">
+      <ThreadCard>
+        <div className="flex items-center gap-4 border-b px-5 py-5">
+          <ResolutionRing value={resolutionRate} />
+          <div>
+            <h2 className="text-lg font-semibold">AI review</h2>
+            <p className="text-sm text-muted-foreground">
+              {FetchAIInsightData?.reason_for_score ||
+                "Conversation quality and resolution analysis."}
+            </p>
           </div>
         </div>
-
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {details && (
-            <>
-              <Badge variant={details.is_active ? "default" : "secondary"}>
-                {details.is_active ? "Active" : "Closed"}
-              </Badge>
-              <Badge
-                className={cn(
-                  "font-normal",
-                  isResolved
-                    ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-                    : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
-                )}
-              >
-                {isResolved ? (
-                  <IconCheck data-icon="inline-start" />
-                ) : (
-                  <IconX data-icon="inline-start" />
-                )}
-                {isResolved ? "Resolved" : "Unresolved"}
-              </Badge>
-              {!FetchFeedbackSequenceIsLoading && feedbackLabel && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="font-normal">
-                      {feedbackLabel}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>
-                      {feedback?.feedback_message ||
-                        "No feedback message provided."}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {!tagsLoading && !detailsLoading && threadTags.length > 0 && (
-                <TagsCell tags={threadTags} />
-              )}
-            </>
+        <div>
+          <div className="border-b px-5 py-5">
+            <p className="text-sm leading-6 text-muted-foreground">
+              {FetchConversationSummaryData?.conversation_summary ||
+                "No summary available for this conversation."}
+            </p>
+          </div>
+          {successes.length > 0 && (
+            <div className="border-b px-5 py-5">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-emerald-700">
+                Went well
+              </h3>
+              <ul className="space-y-3.5">
+                {successes.map((item, index) => (
+                  <li
+                    className="flex gap-3 text-sm leading-5 text-muted-foreground"
+                    key={index}
+                  >
+                    <IconCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {improvements.length > 0 && (
+            <div className="px-5 py-5">
+              <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-red-700">
+                To improve
+              </h3>
+              <div className="space-y-3.5">
+                {improvements.map((item, index) => (
+                  <div
+                    className="flex w-full items-start gap-3 text-left text-sm leading-5 text-muted-foreground"
+                    key={index}
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">
+                      {index + 1}
+                    </span>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
-
-        <SessionFacts
-          userMetadata={
-            FetchUserMetadataIsLoading || detailsLoading
-              ? null
-              : FetchUserMetadataData
+      </ThreadCard>
+      {actions.length > 0 && (
+        <ThreadCard
+          title={
+            <div className="flex items-center justify-between">
+              <span>Suggested actions</span>
+              <span className="text-sm font-normal text-muted-foreground">
+                {actions.length} actions
+              </span>
+            </div>
           }
-        />
-      </header>
-
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* When and how long, on one muted line. The device and location
-              half of this strip now sits in the header beside the name, so
-              what is left is the session's own timing. */}
-          <div className="flex shrink-0 items-center gap-4 overflow-x-auto border-b px-4 py-2">
-            <MetaCell
-              icon={<IconHash className="size-3.5" />}
-              label="Session ID"
-              value={threadId}
-              mono
-            />
-            <MetaCell
-              icon={<IconCalendarTime className="size-3.5" />}
-              label="Started"
-              value={formatDateTime(details?.created_at || null) || "—"}
-              loading={detailsLoading}
-            />
-            <MetaCell
-              icon={<IconCalendarTime className="size-3.5" />}
-              label="Ended"
-              value={
-                details?.ended_at
-                  ? formatDateTime(details.ended_at)
-                  : details?.is_active
-                    ? "Ongoing"
-                    : "—"
-              }
-              loading={detailsLoading}
-            />
-            <MetaCell
-              icon={<IconClockHour4 className="size-3.5" />}
-              label="Duration"
-              value={
-                getDuration(
-                  details?.created_at ?? null,
-                  details?.ended_at ?? null,
-                ) || "—"
-              }
-              loading={detailsLoading}
-            />
+        >
+          <div>
+            {actions.map((action, index) => (
+              <div
+                key={index}
+                className="border-b p-5 text-sm font-semibold last:border-b-0"
+              >
+                {action}
+              </div>
+            ))}
           </div>
+        </ThreadCard>
+      )}
+    </div>
+  );
+  const threadInfo = (
+    <div className="space-y-4">
+      <ThreadCard
+        title={
+          <div className="flex justify-between">
+            <span>Cart</span>
+            <span className="text-sm font-normal text-muted-foreground">
+              {cartItems.length} items
+            </span>
+          </div>
+        }
+      >
+        <div className="space-y-3 p-5">
+          {cartItems.length ? (
+            cartItems.map((item, index) => (
+              <div
+                className="flex items-center gap-3"
+                key={`${item.product_id}-${index}`}
+              >
+                <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                  {item.product_image ? (
+                    // Product images come from arbitrary store CDNs, so
+                    // next/image's domain allowlist can't cover them.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.product_image}
+                      alt=""
+                      className="size-full object-contain"
+                    />
+                  ) : (
+                    <IconShoppingBag className="size-4 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Qty: {item.qty}
+                  </p>
+                </div>
+                <p className="text-sm font-semibold">
+                  {formatCartPrice(item.price) ?? "-"}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nothing in the cart.
+            </p>
+          )}
+        </div>
+      </ThreadCard>
+      <ThreadCard title="Thread details">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 px-5 py-4 text-sm">
+          <dt className="text-muted-foreground">Thread ID</dt>
+          <dd className="truncate text-right font-mono">{threadId}</dd>
+          <dt className="text-muted-foreground">Started</dt>
+          <dd className="text-right">{started}</dd>
+          <dt className="text-muted-foreground">Ended</dt>
+          <dd className="text-right">{ended}</dd>
+          <dt className="text-muted-foreground">Duration</dt>
+          <dd className="text-right">{duration}</dd>
+          <dt className="text-muted-foreground">Handled by</dt>
+          <dd className="text-right">{handledBy}</dd>
+          <dt className="text-muted-foreground">Category</dt>
+          <dd className="text-right">{tags[0]?.name ?? "—"}</dd>
+          {feedback ? (
+            <>
+              <dt className="text-muted-foreground">User feedback</dt>
+              <dd className="flex items-center justify-end gap-1.5 text-right">
+                <span aria-label={feedback.rating}>
+                  {FEEDBACK_RATINGS.find(
+                    (rating) => rating.value === feedback.rating,
+                  )?.label ?? feedback.rating}
+                </span>
+                {feedbackComment ? <InfoIcon text={feedbackComment} /> : null}
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      </ThreadCard>
+    </div>
+  );
 
-          {/* One column, insights above the transcript. The two used to sit
-              side by side in boxes, which split the reading width in half
-              and asked an agent to choose where to look first. */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <AIInsightsSection
-              summary={FetchConversationSummaryData?.conversation_summary || ""}
-              summaryLoading={
-                detailsLoading || FetchConversationSummaryIsLoading
+  return (
+    <div className="min-h-svh bg-muted/50">
+      <header className="border-b bg-background">
+        <div className="flex h-16 items-center border-b px-6 lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back to Threads"
+            onClick={() => router.back()}
+          >
+            <IconArrowLeft />
+          </Button>
+          <h1 className="ml-3 text-xl font-bold">Thread</h1>
+        </div>
+        <div className="flex w-full items-start gap-3 px-5 py-7 lg:px-6 lg:py-4">
+          <div className="min-w-0 flex-1">
+            <nav
+              aria-label="Breadcrumb"
+              className="mb-3 hidden min-w-0 items-center gap-2 text-sm lg:flex"
+            >
+              <Link
+                href="/threads"
+                className="flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground"
+              >
+                <IconChevronLeft className="size-4" />
+                Threads
+              </Link>
+              <span className="text-muted-foreground">/</span>
+              <span className="truncate font-medium">{threadTitle}</span>
+            </nav>
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                aria-hidden
+                className="flex size-[70px] shrink-0 items-center justify-center rounded-2xl bg-primary text-xl font-semibold text-primary-foreground lg:size-14 lg:rounded-xl lg:text-lg"
+              >
+                {getInitials(customerName) ?? "?"}
+              </span>
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-bold">{customerName}</h1>
+                {/* Kept from GT's earlier header; nothing for a guest, and
+                    not repeated when the email already is the title. */}
+                {details?.customer_name && details.customer_email ? (
+                  <p className="truncate text-sm text-muted-foreground">
+                    {details.customer_email}
+                  </p>
+                ) : null}
+                {tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {tags.map((tag, index) => (
+                      <TagBadge key={`${tag.name}-${index}`} tag={tag} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* GT's location / IP / device facts, where the redesign had its
+              ticket actions. mt-8 lines it up with the avatar row on
+              desktop, under the breadcrumb. */}
+          <div className="flex shrink-0 items-center gap-2 lg:mt-8">
+            <SessionFacts
+              userMetadata={
+                FetchUserMetadataIsLoading || detailsLoading
+                  ? null
+                  : FetchUserMetadataData
               }
-              nextActionableItems={
-                FetchAIInsightData?.next_actionable_items || []
-              }
-              resolutionSuccessRate={
-                FetchAIInsightData?.resolution_success_rate || "0"
-              }
-              reasonForScore={FetchAIInsightData?.reason_for_score || ""}
-              overperformingCases={
-                FetchAIInsightData?.overperforming_cases || []
-              }
-              underperformingCases={
-                FetchAIInsightData?.underperforming_cases || []
-              }
-              insightsLoading={detailsLoading || FetchAIInsightIsLoading}
             />
-
-            <section>
-              <SectionHeader
-                icon={IconMessages}
-                // The thread's subject names the exchange it is the
-                // subject of; full text on hover when it truncates.
-                title={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span>{details?.name || "Conversation"}</span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {details?.name || "Conversation"}
-                    </TooltipContent>
-                  </Tooltip>
-                }
-                info="The full exchange between the customer and the AI assistant for this session."
-                action={
-                  detailsLoading ? null : (
-                    <Badge variant="secondary" className="font-normal">
-                      {details?.total_messages ?? threadMessages.length}{" "}
-                      Messages
-                    </Badge>
-                  )
-                }
-              />
-
-              {detailsLoading ? (
-                <LoadingState label="Loading conversation…" />
-              ) : threadMessages.length > 0 ? (
-                <div className="p-2">
-                  <MessagePan
-                    messages={threadMessages}
-                    handlerEvents={details?.handler_events}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                  <IconMessage2 className="size-8 text-muted-foreground/50" />
-                  <Typography variant="small" as="p">
-                    No messages in this conversation
-                  </Typography>
-                  <Typography variant="muted">
-                    The session was opened but the customer never sent a
-                    message.
-                  </Typography>
-                </div>
-              )}
-            </section>
           </div>
         </div>
-
-        <CustomerDetailsPanel
-          cart={{
-            data: FetchCartData,
-            loading: detailsLoading || FetchCartDataIsLoading,
-          }}
+        <div className="mx-6 mb-3 grid grid-cols-2 overflow-hidden rounded-xl border lg:hidden">
+          <div className="flex flex-col items-start gap-1 border-r px-2 py-2 leading-tight">
+            <small className="text-muted-foreground">Resolution</small>
+            <span className="self-center">
+              <ResolutionRing value={resolutionRate} compact />
+            </span>
+          </div>
+          <div className="flex flex-col items-start gap-1 px-2 py-2 leading-tight">
+            <small className="text-muted-foreground">Duration</small>
+            <b className="flex min-h-8 items-center whitespace-nowrap text-sm">
+              {duration}
+            </b>
+          </div>
+        </div>
+      </header>
+      <main className="w-full px-4 py-5 lg:px-6 lg:py-6">
+        <ConversationMap
+          messages={threadMessages}
+          rate={resolutionRate}
+          startedAt={details?.created_at}
+          endedAt={details?.ended_at}
+          cartCount={cartItems.length}
+          issueCount={improvements.length}
         />
-      </div>
+        <div className="mt-5 hidden gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
+          {transcript}
+          <aside className="space-y-4">
+            {review}
+            {threadInfo}
+          </aside>
+        </div>
+        <Tabs defaultValue="chat" className="lg:hidden">
+          {/* Sticks under the phone top bar, which is 0 tall from md up. */}
+          <TabsList
+            variant="line"
+            className="sticky top-(--app-topbar-height) z-10 -mx-4 mb-4 flex h-12 w-[calc(100%+2rem)] justify-around border-y bg-background px-2"
+          >
+            <TabsTrigger
+              value="chat"
+              className="text-base data-active:after:bg-primary"
+            >
+              Chat
+            </TabsTrigger>
+            <TabsTrigger
+              value="review"
+              className="text-base data-active:after:bg-primary"
+            >
+              AI review{" "}
+              {improvements.length ? (
+                <span className="rounded-full bg-red-100 px-1.5 text-xs text-red-700">
+                  {improvements.length}
+                </span>
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger
+              value="details"
+              className="text-base data-active:after:bg-primary"
+            >
+              Details
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="chat">{transcript}</TabsContent>
+          <TabsContent value="review">{review}</TabsContent>
+          <TabsContent value="details">{threadInfo}</TabsContent>
+        </Tabs>
+      </main>
     </div>
   );
 }

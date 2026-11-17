@@ -33,14 +33,14 @@ function formatDuration(start: string, end: string | null | undefined): string {
 /**
  * A thread's tags, as the two shapes the API actually sends.
  *
- * The threads list returns full tag records; the thread detail endpoint
- * returns bare names. Both reach this cell, and a record rendered as a
- * React child is what crashed the Threads page.
+ * The threads list returns bare names; the thread detail tags endpoint
+ * returns records with the tag list's colour. A record rendered as a
+ * React child is what once crashed the Threads page.
  */
 export type ThreadTag = string | ThreadTagData;
 
 /** Bare names get the neutral chip; records keep the colour they were given. */
-function toTagRecord(tag: ThreadTag): ThreadTagData {
+export function toTagRecord(tag: ThreadTag): ThreadTagData {
   return typeof tag === "string"
     ? { name: tag, color: "", description: "" }
     : tag;

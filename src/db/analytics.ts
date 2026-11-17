@@ -100,6 +100,35 @@ function pyRound(value: number, digits = 0): number {
 
 const round2 = (v: number) => pyRound(v, 2);
 
+// A KPI card's change vs. the previous period, e.g. "▲ 3.2 pts".
+export type MetricTrend = {
+  delta: number;
+  direction: "up" | "down" | "flat";
+  variant: "success" | "danger" | "neutral";
+  label: string;
+};
+
+/** The same-length period just before [from, to] (both ends inclusive). */
+function previousPeriodRange(from: string, to: string) {
+  const length = daysBetween(from, to) + 1;
+  return { from: addDays(from, -length), to: addDays(from, -1) };
+}
+
+function buildTrend(
+  current: number,
+  previous: number,
+  higherIsBetter: boolean,
+  unit: "pts" | "s" | "min" | "",
+): MetricTrend {
+  const delta = pyRound(current - previous, 1);
+  const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const better = higherIsBetter ? delta > 0 : delta < 0;
+  const variant = delta === 0 ? "neutral" : better ? "success" : "danger";
+  const arrow = direction === "up" ? "▲" : direction === "down" ? "▼" : "–";
+  const label = `${arrow} ${Math.abs(delta)}${unit ? ` ${unit}` : ""}`;
+  return { delta, direction, variant, label };
+}
+
 // ===========================================================================
 // 2. FeedbackInsightsSerializer  →  /analytics/feedback-insights/
 // ===========================================================================
@@ -718,7 +747,6 @@ export async function get_operational_efficiency(params: {
   };
 
   const threadWhere = baseFilters(startDate, endDate);
-  const threadSubquery = sql`(SELECT id FROM chat_thread WHERE ${threadWhere})`;
 
   const [{ total }] = await db
     .select({ total: sql<number>`count(*)::int` })
@@ -726,16 +754,18 @@ export async function get_operational_efficiency(params: {
     .where(threadWhere);
   const totalThreads = Number(total);
 
-  // Bot-resolved: SentimentAnalysis for in-range threads, resolved_queries > 0.
+  // AI resolved: a closed chat handled by the AI start to finish — no agent
+  // ever took it over (a takeover records to_agent_id, even if later handed
+  // back to the AI). Shared by every count below.
+  const aiResolvedOnly = and(
+    eq(chatThread.chatHandler, "ai"),
+    sql`NOT EXISTS (SELECT 1 FROM chat_thread_assignment cta WHERE cta.thread_id = ${chatThread.id} AND cta.to_agent_id IS NOT NULL)`,
+  )!;
+
   const [{ botResolved }] = await db
     .select({ botResolved: sql<number>`count(*)::int` })
-    .from(sentimentAnalysis)
-    .where(
-      and(
-        sql`${sentimentAnalysis.threadId} IN ${threadSubquery}`,
-        gt(sentimentAnalysis.resolvedQueries, 0),
-      ),
-    );
+    .from(chatThread)
+    .where(and(threadWhere, aiResolvedOnly));
   const botResolvedCount = Number(botResolved);
 
   const botResolutionPercentage = totalThreads
@@ -752,23 +782,16 @@ export async function get_operational_efficiency(params: {
   const prevPeriodEnd = addDays(startDate, -1);
 
   const prevWhere = baseFilters(prevPeriodStart, prevPeriodEnd);
-  const prevSubquery = sql`(SELECT id FROM chat_thread WHERE ${prevWhere})`;
 
   const [{ prevTotal }] = await db
     .select({ prevTotal: sql<number>`count(*)::int` })
     .from(chatThread)
     .where(prevWhere);
 
-  // prev_bot_resolved: SentimentAnalysis for prev threads, resolved>0.
   const [{ prevBotResolved }] = await db
     .select({ prevBotResolved: sql<number>`count(*)::int` })
-    .from(sentimentAnalysis)
-    .where(
-      and(
-        sql`${sentimentAnalysis.threadId} IN ${prevSubquery}`,
-        gt(sentimentAnalysis.resolvedQueries, 0),
-      ),
-    );
+    .from(chatThread)
+    .where(and(prevWhere, aiResolvedOnly));
   const prevPercentage = Number(prevTotal)
     ? round2((Number(prevBotResolved) / Number(prevTotal)) * 100)
     : 0;
@@ -882,7 +905,6 @@ export async function get_operational_efficiency(params: {
       sql`(${chatThread.createdAt} AT TIME ZONE ${APP_TZ_SQL}) >= ${periodStartDate}::timestamp`,
       sql`(${chatThread.createdAt} AT TIME ZONE ${APP_TZ_SQL}) < ${periodEndDate}::timestamp`,
     )!;
-    const periodThreadSubquery = sql`(SELECT id FROM chat_thread WHERE ${periodThreadWhere})`;
 
     const [{ totPeriod }] = await db
       .select({ totPeriod: sql<number>`count(*)::int` })
@@ -892,13 +914,8 @@ export async function get_operational_efficiency(params: {
 
     const [{ botRes }] = await db
       .select({ botRes: sql<number>`count(*)::int` })
-      .from(sentimentAnalysis)
-      .where(
-        and(
-          sql`${sentimentAnalysis.threadId} IN ${periodThreadSubquery}`,
-          gt(sentimentAnalysis.resolvedQueries, 0),
-        ),
-      );
+      .from(chatThread)
+      .where(and(periodThreadWhere, aiResolvedOnly));
     const periodBotResolved = Number(botRes);
 
     const botResolvedPercentage = totalPeriodThreads
@@ -914,18 +931,10 @@ export async function get_operational_efficiency(params: {
     });
   }
 
-  // NOTE: Django reuses the loop variable `bot_resolved_count` inside the
-  // trend loop, so the top-level bot_resolution_rate `count` reflects the LAST
-  // trend period's value (a Django quirk we replicate).
-  let finalBotResolvedCount = botResolvedCount;
-  if (resolutionTrend.length > 0) {
-    finalBotResolvedCount =
-      resolutionTrend[resolutionTrend.length - 1].bot_resolved.count;
-  }
-
   return {
     bot_resolution_rate: {
-      count: finalBotResolvedCount,
+      count: botResolvedCount,
+      total: totalThreads,
       percentage: botResolutionPercentage,
     },
     self_service_success: selfServiceSuccess,
@@ -1034,17 +1043,6 @@ function isoformatIst(d: Date): string {
   return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}:${get("second")}${micro}+05:30`;
 }
 
-/** IST local hour-of-day (0-23) of a Date. */
-function istHour(d: Date): number {
-  const h = new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TZ,
-    hour: "2-digit",
-    hour12: false,
-  }).format(d);
-  const n = parseInt(h, 10);
-  return n === 24 ? 0 : n;
-}
-
 export async function get_chat_history_aggregated(params: {
   store_code?: string;
   from?: string;
@@ -1055,7 +1053,13 @@ export async function get_chat_history_aggregated(params: {
   granularity: string;
   from_dt: string;
   to_dt: string;
-  points: Array<{ label: string; value: number }>;
+  points: Array<{
+    label: string;
+    value: number | null;
+    range_label?: string;
+    previous: number | null;
+    previous_label: string | null;
+  }>;
 }> {
   const db = getDb();
   const granularity = params.granularity ?? "hourly";
@@ -1069,35 +1073,110 @@ export async function get_chat_history_aggregated(params: {
     granularity,
   );
 
-  const conds = [
-    gte(chatHistory.createdAt, start.toISOString()),
-    lte(chatHistory.createdAt, end.toISOString()),
-    eq(chatHistory.role, "user"),
-  ];
-  const storeScope = threadIdScope(chatHistory.threadId, params.store_code);
-  if (storeScope) conds.push(storeScope);
-  if (params.query) {
-    conds.push(sql`${chatHistory.message} ILIKE ${"%" + params.query + "%"}`);
-  }
-
-  const rows = await db
-    .select({ createdAt: chatHistory.createdAt })
-    .from(chatHistory)
-    .where(and(...conds));
+  const timestampsIn = async (from: Date, to: Date) => {
+    const conds = [
+      gte(chatHistory.createdAt, from.toISOString()),
+      lte(chatHistory.createdAt, to.toISOString()),
+      eq(chatHistory.role, "user"),
+    ];
+    const storeScope = threadIdScope(chatHistory.threadId, params.store_code);
+    if (storeScope) conds.push(storeScope);
+    if (params.query) {
+      conds.push(sql`${chatHistory.message} ILIKE ${"%" + params.query + "%"}`);
+    }
+    const rows = await db
+      .select({ createdAt: chatHistory.createdAt })
+      .from(chatHistory)
+      .where(and(...conds));
+    return rows.map((r) => new Date(r.createdAt));
+  };
 
   const points = aggregateChatMessages(
-    rows.map((r) => new Date(r.createdAt)),
+    await timestampsIn(start, end),
     granularity,
     start,
     end,
+  );
+  const prev = previousRange(granularity, start, end);
+  const prevPoints = aggregateChatMessages(
+    await timestampsIn(prev.start, prev.end),
+    granularity,
+    prev.start,
+    prev.end,
   );
 
   return {
     granularity,
     from_dt: isoformatIst(start),
     to_dt: isoformatIst(end),
-    points,
+    // Paired by position: the same hour yesterday, the same day a week back,
+    // or the same dates a month back.
+    points: points.map((p, i) => ({
+      ...p,
+      previous: prevPoints[i]?.value ?? null,
+      previous_label:
+        prevPoints[i]?.range_label ?? prevPoints[i]?.label ?? null,
+    })),
   };
+}
+
+const HOUR_MS = 3600 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+// ponytail: IST hard-coded like APP_TZ; both change together if the install's
+// TIME_ZONE moves.
+const IST_OFFSET_MS = 5.5 * HOUR_MS;
+// e.g. "Tue 20 Oct"
+const dayLabel = new Intl.DateTimeFormat("en-GB", {
+  timeZone: APP_TZ,
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+});
+
+/**
+ * Start (epoch ms) of the chart's window ending with `d`'s IST day: that day
+ * itself (hourly), or the 7 days up to and including it (weekly).
+ */
+function periodStart(granularity: string, d: Date): number {
+  const days = Math.floor((d.getTime() + IST_OFFSET_MS) / DAY_MS);
+  const back = granularity === "weekly" ? 6 : 0;
+  return (days - back) * DAY_MS - IST_OFFSET_MS;
+}
+
+/**
+ * The period the chart compares against: hourly → all of yesterday,
+ * weekly → the 7 days before the last 7, monthly → the same dates one month
+ * back.
+ */
+function previousRange(
+  granularity: string,
+  start: Date,
+  end: Date,
+): { start: Date; end: Date } {
+  if (granularity === "hourly" || granularity === "weekly") {
+    const first = periodStart(granularity, end);
+    const length = granularity === "hourly" ? DAY_MS : 7 * DAY_MS;
+    return { start: new Date(first - length), end: new Date(first - 1) };
+  }
+  // Month over month: each bucket against the same days of the month before
+  // it, so the whole range moves back one month. Same IST date and time; the
+  // day clamps to the month's last (Mar 31 → Feb 28).
+  const monthBack = (d: Date) => {
+    const iso = isoformatIst(d); // YYYY-MM-DDTHH:mm:ss+05:30
+    const index = Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 2;
+    const y = Math.floor(index / 12);
+    const m = (index % 12) + 1;
+    const day = Math.min(
+      Number(iso.slice(8, 10)),
+      new Date(Date.UTC(y, m, 0)).getUTCDate(),
+    );
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const ms = String(d.getUTCMilliseconds()).padStart(3, "0");
+    return new Date(
+      `${y}-${pad(m)}-${pad(day)}T${iso.slice(11, 19)}.${ms}+05:30`,
+    );
+  };
+  return { start: monthBack(start), end: monthBack(end) };
 }
 
 /** Port of analytics.helpers.aggregate_chat_messages (timestamps in IST local). */
@@ -1106,7 +1185,7 @@ function aggregateChatMessages(
   granularity: string,
   startDt: Date,
   endDt: Date,
-): Array<{ label: string; value: number }> {
+): Array<{ label: string; value: number | null; range_label?: string }> {
   const monthAbbr = [
     "Jan",
     "Feb",
@@ -1122,17 +1201,25 @@ function aggregateChatMessages(
     "Dec",
   ];
 
-  if (granularity === "hourly") {
-    const buckets = new Map<string, number>();
-    for (let h = 0; h < 24; h++) buckets.set(hourLabel(h), 0);
+  if (granularity === "hourly" || granularity === "weekly") {
+    // The 24 hours of endDt's IST day, or the 7 days ending with it.
+    // Buckets not reached yet are null so the chart line stops at now.
+    const hourly = granularity === "hourly";
+    const first = periodStart(granularity, endDt);
+    const step = hourly ? HOUR_MS : DAY_MS;
+    const points: Array<{ label: string; value: number | null }> = Array.from(
+      { length: hourly ? 24 : 7 },
+      (_, i) => ({
+        label: hourly ? hourLabel(i) : dayLabel.format(first + i * step),
+        value: first + i * step <= endDt.getTime() ? 0 : null,
+      }),
+    );
     for (const ts of timestamps) {
-      const label = hourLabel(istHour(ts));
-      buckets.set(label, (buckets.get(label) ?? 0) + 1);
+      const i = Math.floor((ts.getTime() - first) / step);
+      const current = points[i]?.value;
+      if (current != null) points[i].value = current + 1;
     }
-    return Array.from(buckets.entries()).map(([label, value]) => ({
-      label,
-      value,
-    }));
+    return points;
   }
 
   // IST local date parts of a Date
@@ -1147,53 +1234,27 @@ function aggregateChatMessages(
       parseInt(parts.find((p) => p.type === t)!.value, 10);
     return { y: get("year"), mo: get("month"), d: get("day") };
   };
-  // day-of-week (Mon=0..Sun=6) for an IST date
-  const istWeekday = (y: number, mo: number, d: number) => {
-    // Use UTC date to avoid local tz drift; weekday of calendar date is tz-independent.
-    const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay(); // 0=Sun..6=Sat
-    return (dow + 6) % 7; // Mon=0..Sun=6
-  };
-  const fmtDdMmm = (y: number, mo: number, d: number) =>
-    `${String(d).padStart(2, "0")} ${monthAbbr[mo - 1]}`;
-
-  if (granularity === "weekly") {
-    const buckets = new Map<string, number>();
-    const sp = istParts(startDt);
-    // cursor = start.date(); rewind to Monday
-    const cursor = new Date(Date.UTC(sp.y, sp.mo - 1, sp.d));
-    const wd = istWeekday(sp.y, sp.mo - 1 + 1, sp.d);
-    cursor.setUTCDate(cursor.getUTCDate() - wd);
-    const ep = istParts(endDt);
-    const endDate = new Date(Date.UTC(ep.y, ep.mo - 1, ep.d));
-    while (cursor.getTime() <= endDate.getTime()) {
-      const cy = cursor.getUTCFullYear();
-      const cmo = cursor.getUTCMonth() + 1;
-      const cd = cursor.getUTCDate();
-      buckets.set(`W ${fmtDdMmm(cy, cmo, cd)}`, 0);
-      cursor.setUTCDate(cursor.getUTCDate() + 7);
-    }
-    for (const ts of timestamps) {
-      const p = istParts(ts);
-      const w = istWeekday(p.y, p.mo, p.d);
-      const ws = new Date(Date.UTC(p.y, p.mo - 1, p.d));
-      ws.setUTCDate(ws.getUTCDate() - w);
-      const label = `W ${fmtDdMmm(ws.getUTCFullYear(), ws.getUTCMonth() + 1, ws.getUTCDate())}`;
-      if (buckets.has(label)) buckets.set(label, (buckets.get(label) ?? 0) + 1);
-    }
-    return Array.from(buckets.entries()).map(([label, value]) => ({
-      label,
-      value,
-    }));
-  }
-
   // monthly
   const buckets = new Map<string, number>();
+  // The days of each month inside the range, e.g. "26–30 Sep", since the
+  // first and last months are usually partial.
+  const ranges = new Map<string, string>();
   const sp = istParts(startDt);
   const ep = istParts(endDt);
   let y = sp.y;
   let m = sp.mo;
   while (y < ep.y || (y === ep.y && m <= ep.mo)) {
-    buckets.set(`${monthAbbr[m - 1]} ${y}`, 0);
+    const label = `${monthAbbr[m - 1]} ${y}`;
+    buckets.set(label, 0);
+    const firstDay = y === sp.y && m === sp.mo ? sp.d : 1;
+    const lastDay =
+      y === ep.y && m === ep.mo
+        ? ep.d
+        : new Date(Date.UTC(y, m, 0)).getUTCDate();
+    ranges.set(
+      label,
+      `${firstDay === lastDay ? firstDay : `${firstDay}–${lastDay}`} ${monthAbbr[m - 1]}`,
+    );
     m += 1;
     if (m > 12) {
       m = 1;
@@ -1208,6 +1269,7 @@ function aggregateChatMessages(
   return Array.from(buckets.entries()).map(([label, value]) => ({
     label,
     value,
+    range_label: ranges.get(label),
   }));
 }
 
@@ -1323,13 +1385,29 @@ function parseLegacyDaterange(raw: string): { start: Date; end: Date } {
 // ===========================================================================
 
 export type DashboardSummary = {
-  feedback_insights: Awaited<ReturnType<typeof get_feedback_insights>> | null;
-  engagements: Awaited<ReturnType<typeof get_engagements>> | null;
-  operational_efficiency: Awaited<
-    ReturnType<typeof get_operational_efficiency>
-  > | null;
+  feedback_insights:
+    | (Awaited<ReturnType<typeof get_feedback_insights>> & {
+        csat_score: { trend: MetricTrend };
+        avg_handle_time: { trend: MetricTrend };
+      })
+    | null;
+  engagements:
+    | (Awaited<ReturnType<typeof get_engagements>> & {
+        total_threads_trend: MetricTrend;
+        avg_response_time_trend: MetricTrend;
+      })
+    | null;
+  operational_efficiency:
+    | (Awaited<ReturnType<typeof get_operational_efficiency>> & {
+        bot_resolution_rate: { trend: MetricTrend };
+      })
+    | null;
   user_matrix: Awaited<ReturnType<typeof get_user_matrix>> | null;
-  conversion_rate: Awaited<ReturnType<typeof get_conversion_rate>> | null;
+  conversion_rate:
+    | (Awaited<ReturnType<typeof get_conversion_rate>> & {
+        trend: MetricTrend;
+      })
+    | null;
 };
 
 const EMPTY_DASHBOARD: DashboardSummary = {
@@ -1344,6 +1422,8 @@ export async function get_dashboard_summary(params: {
   store_code?: string;
   from?: string;
   to?: string;
+  // Recompute and re-cache instead of reading the cache (Refresh button).
+  fresh?: boolean;
 }): Promise<DashboardSummary> {
   // Per-store access gate (F3). A denied store returns the empty payload and is
   // NOT cached, so an allowed user can never be served a denied user's slot.
@@ -1352,16 +1432,86 @@ export async function get_dashboard_summary(params: {
   if (!accessible) return EMPTY_DASHBOARD;
 
   const key = `${params.store_code ?? ""}:${params.from ?? ""}:${params.to ?? ""}`;
-  const cached = getCached<DashboardSummary>(key);
+  const cached = params.fresh ? null : getCached<DashboardSummary>(key);
   if (cached) return cached;
 
+  // Each card is also computed for the same-length period just before the
+  // selected one, to show its change ("▲ 3.2 pts").
+  const endDate = parseQueryDate(params.to, istToday());
+  const startDate = parseQueryDate(params.from, addDays(endDate, -30));
+  const prevParams = { ...params, ...previousPeriodRange(startDate, endDate) };
+
   // One connection, sequential (single request transaction — see request-context).
+  const feedback = await get_feedback_insights(params);
+  const engagements = await get_engagements(params);
+  const efficiency = await get_operational_efficiency(params);
+  const userMatrix = await get_user_matrix(params);
+  const conversion = await get_conversion_rate(params);
+
+  const prevFeedback = await get_feedback_insights(prevParams);
+  const prevEngagements = await get_engagements(prevParams);
+  const prevEfficiency = await get_operational_efficiency(prevParams);
+  const prevConversion = await get_conversion_rate(prevParams);
+
   const result: DashboardSummary = {
-    feedback_insights: await get_feedback_insights(params),
-    engagements: await get_engagements(params),
-    operational_efficiency: await get_operational_efficiency(params),
-    user_matrix: await get_user_matrix(params),
-    conversion_rate: await get_conversion_rate(params),
+    feedback_insights: {
+      ...feedback,
+      csat_score: {
+        ...feedback.csat_score,
+        trend: buildTrend(
+          feedback.csat_score.percentage,
+          prevFeedback.csat_score.percentage,
+          true,
+          "pts",
+        ),
+      },
+      avg_handle_time: {
+        ...feedback.avg_handle_time,
+        trend: buildTrend(
+          feedback.avg_handle_time.value,
+          prevFeedback.avg_handle_time.value,
+          false,
+          "min",
+        ),
+      },
+    },
+    engagements: {
+      ...engagements,
+      total_threads_trend: buildTrend(
+        engagements.total_threads,
+        prevEngagements.total_threads,
+        true,
+        "",
+      ),
+      avg_response_time_trend: buildTrend(
+        engagements.avg_response_time_seconds,
+        prevEngagements.avg_response_time_seconds,
+        false,
+        "s",
+      ),
+    },
+    operational_efficiency: {
+      ...efficiency,
+      bot_resolution_rate: {
+        ...efficiency.bot_resolution_rate,
+        trend: buildTrend(
+          efficiency.bot_resolution_rate.percentage,
+          prevEfficiency.bot_resolution_rate.percentage,
+          true,
+          "pts",
+        ),
+      },
+    },
+    user_matrix: userMatrix,
+    conversion_rate: {
+      ...conversion,
+      trend: buildTrend(
+        conversion.percentage,
+        prevConversion.percentage,
+        true,
+        "pts",
+      ),
+    },
   };
   setCached(key, result);
   return result;

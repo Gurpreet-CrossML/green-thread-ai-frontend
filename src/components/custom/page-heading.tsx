@@ -15,16 +15,19 @@ export function PageHeading({
   description,
   action,
   className,
+  descriptionClassName,
 }: {
   title: string;
   description?: string;
   action?: React.ReactNode;
   className?: string;
+  /** Extra classes for the description, e.g. to hide it on small screens. */
+  descriptionClassName?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-4 md:flex-row md:items-center md:justify-between",
+        "flex flex-col gap-4 desktop:flex-row desktop:items-center desktop:justify-between",
         className,
       )}
     >
@@ -32,7 +35,11 @@ export function PageHeading({
         <Typography variant="h4" as="h2">
           {title}
         </Typography>
-        {description && <Typography variant="muted">{description}</Typography>}
+        {description && (
+          <Typography variant="muted" className={descriptionClassName}>
+            {description}
+          </Typography>
+        )}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>

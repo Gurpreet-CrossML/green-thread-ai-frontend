@@ -1,6 +1,7 @@
 "use client";
 
 import { AppSidebar } from "@/components/custom/app-sidebar";
+import { MobileTopBar } from "@/components/custom/mobile-nav";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
   resolveSubSidebarKey,
@@ -8,6 +9,7 @@ import {
   SubSidebarMenuItem,
 } from "@/lib/sidebar-navs";
 import { Suspense, useState } from "react";
+import { useIsBelowLg } from "@/hooks/use-narrow-viewport";
 import {
   Empty,
   EmptyDescription,
@@ -51,7 +53,17 @@ export default function MainLayout({
   // Collapses the sub-sidebar only. The icon rail is the app's navigation
   // and stays put — the width worth reclaiming is the sub-sidebar's 14rem,
   // not the rail's 3.5rem.
-  const [subSidebarHidden, setSubSidebarHidden] = useState(false);
+  //
+  // Below 1024px it starts collapsed. That is only the default: the toggle
+  // on the rail still wins, until the viewport crosses the breakpoint
+  // (rotating an iPad), when the default for the new size applies again.
+  const isNarrow = useIsBelowLg();
+  const [toggled, setToggled] = useState<{
+    atNarrow: boolean;
+    hidden: boolean;
+  } | null>(null);
+  const subSidebarHidden =
+    toggled && toggled.atNarrow === isNarrow ? toggled.hidden : isNarrow;
 
   // Derived from the route, so it survives a refresh and works on a deep
   // link. Computed here rather than in AppSidebar because the sidebar's
@@ -62,6 +74,11 @@ export default function MainLayout({
     ? (sidebarMenus.navSubSidebar?.[subSidebarKey] ?? null)
     : null;
   const hasSubSidebar = subSidebarItems !== null;
+  // On a narrow screen the open menu floats over the page rather than
+  // taking 14rem out of it, and closes once a destination is picked.
+  const subSidebarOverlays = isNarrow && hasSubSidebar && !subSidebarHidden;
+  const toggleSubSidebar = () =>
+    setToggled({ atNarrow: isNarrow, hidden: !subSidebarHidden });
 
   if (isAuthPage(pathname)) {
     return <>{children}</>;
@@ -87,6 +104,9 @@ export default function MainLayout({
           // 14rem, not 16: every area label fits well inside it with its
           // icon and padding, so the extra two were empty gutter on every
           // screen — and the panes that matter are to the right of it.
+          // The page only ever reserves the rail's width while the menu
+          // overlays it.
+          ...(isNarrow ? { "--sidebar-gap-width": "3.5rem" } : {}),
           "--sidebar-width-icon":
             hasSubSidebar && !subSidebarHidden
               ? "calc(3.5rem + 14rem)"
@@ -97,14 +117,27 @@ export default function MainLayout({
       {/* The sidebar reads the query string to decide which sub-nav entry
           is active, and useSearchParams opts a route out of static
           rendering unless it sits under a boundary. */}
+      {subSidebarOverlays && (
+        <div
+          aria-hidden
+          className="fixed inset-0 z-[9] bg-black/30"
+          onClick={toggleSubSidebar}
+        />
+      )}
       <Suspense fallback={null}>
         <AppSidebar
           subSidebarItems={subSidebarItems}
           subSidebarHidden={subSidebarHidden}
-          onToggleSubSidebar={() => setSubSidebarHidden((hidden) => !hidden)}
+          onToggleSubSidebar={toggleSubSidebar}
+          onSubSidebarNavigate={() => {
+            if (isNarrow) setToggled({ atNarrow: true, hidden: true });
+          }}
+          className={subSidebarOverlays ? "shadow-2xl" : undefined}
         />
       </Suspense>
       <SidebarInset>
+        {/* Phone only: the hamburger that opens the navigation drawer. */}
+        <MobileTopBar pathname={pathname} />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             {/* No vertical padding here: each page owns its spacing with a
