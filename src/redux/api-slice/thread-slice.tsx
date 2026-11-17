@@ -15,6 +15,8 @@ type ThreadFilters = {
   feedback_rating?: string;
   tags?: (string | ThreadTagData)[];
   handled_by?: string;
+  /** A human agent took the thread over at any point. */
+  has_agent?: boolean;
   assignee?: string[];
 };
 
@@ -25,6 +27,9 @@ export type ThreadTagData = {
   color: string;
   description: string;
 };
+
+/** A tag chip above the Threads list, with how many threads carry it. */
+export type ThreadTagOption = Required<ThreadTagData> & { count: number };
 
 export type FeedbackEntry = {
   id: number;
@@ -259,6 +264,45 @@ export type UserMetadata = {
   os: string;
 };
 
+export type ThreadCounts = {
+  active: number;
+  needsHuman: number;
+};
+
+/** Live chat counts for the sidebar badge and the dashboard. */
+export const FetchThreadCounts = createAsyncThunk<
+  ThreadCounts,
+  { store_code: string }
+>("ThreadCounts", async ({ store_code }, thunkAPI) => {
+  try {
+    const response = await axiosInstance.get(
+      `${ENDPOINTS.fetchThreadCounts()}?store_code=${encodeURIComponent(store_code)}`,
+    );
+    return response.data.data;
+  } catch (error) {
+    const data = isAxiosError(error) ? error.response?.data : undefined;
+    return thunkAPI.rejectWithValue(data || "Unable to fetch thread counts.");
+  }
+});
+
+/**
+ * `&key=value` pairs for a set of thread filters.
+ *
+ * Values are URI-encoded (a tag like "Return & Refund" would otherwise split
+ * the query at the "&"); arrays repeat the key so a value that contains a
+ * comma survives too. Empty when there is nothing to send.
+ */
+function filterQuery(filters: ThreadFilters): string {
+  return Object.entries(filters)
+    .flatMap(([key, value]) =>
+      (Array.isArray(value) ? value : [value]).map(
+        (item) =>
+          `&${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`,
+      ),
+    )
+    .join("");
+}
+
 export const FetchThreads = createAsyncThunk<ThreadsResponse, GetThreadsArgs>(
   "Threads",
   async (
@@ -271,22 +315,8 @@ export const FetchThreads = createAsyncThunk<ThreadsResponse, GetThreadsArgs>(
     thunkAPI,
   ) => {
     try {
-      // Values are URI-encoded (a tag like "Return & Refund" would otherwise
-      // split the query at the "&"); arrays repeat the key so a value that
-      // contains a comma survives too.
-      const filteration =
-        "&" +
-        Object.entries(filters)
-          .flatMap(([key, value]) =>
-            (Array.isArray(value) ? value : [value]).map(
-              (item) =>
-                `${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`,
-            ),
-          )
-          .join("&");
-
       const response = await axiosInstance.get(
-        `${ENDPOINTS.fetchThreads()}?store_code=${store_code}&page=${page}&page_size=${limit}${filteration !== "&" ? filteration : ""}`,
+        `${ENDPOINTS.fetchThreads()}?store_code=${store_code}&page=${page}&page_size=${limit}${filterQuery(filters)}`,
       );
       const data = response.data.data;
 
@@ -459,16 +489,24 @@ export const FetchTags = createAsyncThunk(
   },
 );
 
-/** Distinct tags across a store's threads, for the Threads page tags filter. */
+/**
+ * The Threads page tag chips: the active tags threads carry, each with its
+ * thread count, counted against the list's other filters.
+ */
 export const FetchThreadTagOptions = createAsyncThunk(
   "ThreadTagOptions",
-  async ({ store_code }: { store_code?: string } = {}, thunkAPI) => {
+  async (
+    {
+      store_code = "",
+      filters = {},
+    }: { store_code?: string; filters?: ThreadFilters } = {},
+    thunkAPI,
+  ) => {
     try {
       const response = await axiosInstance.get(
-        ENDPOINTS.fetchThreadTagOptions(),
-        { params: { store_code } },
+        `${ENDPOINTS.fetchThreadTagOptions()}?store_code=${encodeURIComponent(store_code)}${filterQuery(filters)}`,
       );
-      return response.data.data as string[];
+      return response.data.data as ThreadTagOption[];
     } catch (error) {
       const response = isAxiosError(error) ? error.response : undefined;
       const data = response?.data;
@@ -571,6 +609,12 @@ export const UploadMessageAttachments = createAsyncThunk(
 const ThreadSlice = createSlice({
   name: "Thread",
   initialState: {
+    FetchThreadCountsState: {
+      FetchThreadCountsIsLoading: false,
+      FetchThreadCountsIsSuccess: false,
+      FetchThreadCountsIsError: null as null | string | object | unknown,
+      FetchThreadCountsData: { active: 0, needsHuman: 0 } as ThreadCounts,
+    },
     FetchThreadsState: {
       FetchThreadsIsLoading: false,
       FetchThreadsIsSuccess: false,
@@ -621,7 +665,7 @@ const ThreadSlice = createSlice({
       FetchThreadTagOptionsIsLoading: false,
       FetchThreadTagOptionsIsSuccess: false,
       FetchThreadTagOptionsIsError: null as null | string | object | unknown,
-      FetchThreadTagOptionsData: [] as string[],
+      FetchThreadTagOptionsData: [] as ThreadTagOption[],
     },
     FetchAIInsightState: {
       FetchAIInsightIsLoading: false,
@@ -644,6 +688,21 @@ const ThreadSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
+      .addCase(FetchThreadCounts.pending, (state) => {
+        state.FetchThreadCountsState.FetchThreadCountsIsLoading = true;
+        state.FetchThreadCountsState.FetchThreadCountsIsError = null;
+        state.FetchThreadCountsState.FetchThreadCountsIsSuccess = false;
+      })
+      .addCase(FetchThreadCounts.fulfilled, (state, action) => {
+        state.FetchThreadCountsState.FetchThreadCountsIsLoading = false;
+        state.FetchThreadCountsState.FetchThreadCountsData = action.payload;
+        state.FetchThreadCountsState.FetchThreadCountsIsSuccess = true;
+      })
+      .addCase(FetchThreadCounts.rejected, (state, action) => {
+        state.FetchThreadCountsState.FetchThreadCountsIsLoading = false;
+        state.FetchThreadCountsState.FetchThreadCountsIsError = action.payload;
+        state.FetchThreadCountsState.FetchThreadCountsIsSuccess = false;
+      })
       .addCase(FetchThreads.pending, (state, action) => {
         if (action.meta.arg?.skipListStateUpdate) return;
         state.FetchThreadsState.FetchThreadsIsLoading = true;

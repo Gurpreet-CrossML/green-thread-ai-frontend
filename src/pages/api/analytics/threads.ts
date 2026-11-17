@@ -1,4 +1,5 @@
-import { list_threads, ListThreadsFilters } from "@/db/threads";
+import { list_threads } from "@/db/threads";
+import { parseThreadFilters } from "@/lib/thread-filters";
 import { APIResponse, DEFAULT_API_PAGE_SIZE } from "@/lib/config";
 import { createAPIResponse, createPaginatedResponse } from "@/lib/helpers";
 import type { NextApiRequest, NextApiResponse } from "next";
@@ -8,8 +9,8 @@ import { withSessionRoute } from "@/lib/with-session-route";
  * GET /analytics/threads/  ->  ThreadListAPIView (analytics/views.py)
  *
  * Query params: store_code, page, page_size, from, to, search, is_active,
- * user_type, has_feedback, feedback_rating, tags (comma-separated or
- * repeated), handled_by (ai | human).
+ * user_type, has_agent, has_feedback, feedback_rating, tags (comma-separated
+ * or repeated), handled_by (ai | human).
  *
  * Paginated (DRF PageNumberPagination, default page_size=15). When there are no
  * results, Django sets response_data=None which create_api_response renders as
@@ -26,32 +27,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
   }
 
   const q = req.query;
+  const filters = parseThreadFilters(q);
+
   const getStr = (v: string | string[] | undefined): string | undefined =>
     Array.isArray(v) ? v[0] : v;
-  const getList = (v: string | string[] | undefined): string[] | undefined => {
-    if (!v) return undefined;
-    const tags = (Array.isArray(v) ? v : [v])
-      .flatMap((part) => part.split(","))
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-    return tags.length ? tags : undefined;
-  };
-
-  const filters: ListThreadsFilters = {
-    store_code: getStr(q.store_code),
-    from: getStr(q.from),
-    to: getStr(q.to),
-    is_active: getStr(q.is_active),
-    need_escalation: getStr(q.need_escalation),
-    search: getStr(q.search),
-    user_type: getStr(q.user_type),
-    has_feedback: getStr(q.has_feedback),
-    feedback_rating: getStr(q.feedback_rating),
-    tags: getList(q.tags),
-    handled_by: getStr(q.handled_by),
-    assignee: getList(q.assignee),
-  };
-
   const pageParam = getStr(q.page);
   const pageSizeParam = getStr(q.page_size);
 

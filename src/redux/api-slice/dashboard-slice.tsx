@@ -4,9 +4,21 @@ import { isAxiosError } from "axios";
 import { toast } from "sonner";
 import { ENDPOINTS } from "@/lib/config";
 
+// A KPI card's change vs. the previous period, e.g. "▲ 3.2 pts".
+export type MetricTrend = {
+  delta: number;
+  direction: "up" | "down" | "flat";
+  variant: "success" | "danger" | "neutral";
+  label: string;
+};
+
 export type FeedbackInsightsResponse = {
-  avg_handle_time: { value: number; unit: "seconds" | "minutes" };
-  csat_score: { percentage: number };
+  avg_handle_time: {
+    value: number;
+    unit: "seconds" | "minutes";
+    trend: MetricTrend;
+  };
+  csat_score: { percentage: number; trend: MetricTrend };
   feedback_distribution: {
     positive: { value: number };
     neutral: { value: number };
@@ -22,16 +34,24 @@ export type EngagementResponse = {
   total_threads: number;
   sessions_resolved: number;
   avg_response_time_seconds: number;
+  total_threads_trend: MetricTrend;
+  avg_response_time_trend: MetricTrend;
 };
 
 export type OperationalEfficiencyResponse = {
-  bot_resolution_rate: { percentage: number };
+  bot_resolution_rate: {
+    count: number;
+    total: number;
+    percentage: number;
+    trend: MetricTrend;
+  };
 };
 
 export type ConversionRateResponse = {
   percentage: number;
   converted_count: number;
   total_count: number;
+  trend: MetricTrend;
 };
 
 export type UserMatrixResponse = {
@@ -41,7 +61,10 @@ export type UserMatrixResponse = {
 
 export type ConversationHistoryPoint = {
   label: string;
-  value: number;
+  value: number | null;
+  range_label?: string;
+  previous: number | null;
+  previous_label: string | null;
 };
 
 export type ConversationHistoryResponse = {
@@ -51,13 +74,28 @@ export type ConversationHistoryResponse = {
   points: ConversationHistoryPoint[];
 };
 
+// Filters every dashboard widget is fetched with.
+export type DashboardFilterArgs = {
+  storeCode: string;
+  from?: string;
+  to?: string;
+  // A background reload: keep what is on screen instead of a loading state.
+  silent?: boolean;
+  // Skip the server's short dashboard cache (the Refresh button).
+  fresh?: boolean;
+};
+
+// axios drops undefined values, so unset filters fall back to server defaults.
+const dashboardParams = ({ storeCode, from, to }: DashboardFilterArgs) => ({
+  store_code: storeCode,
+  from,
+  to,
+});
+
 export const FetchConversationHistory = createAsyncThunk(
   "FetchConversationHistory",
   async (
-    args: {
-      storeCode: string;
-      from?: string;
-      to?: string;
+    args: DashboardFilterArgs & {
       granularity?: string;
       aggregated?: boolean;
     },
@@ -65,7 +103,14 @@ export const FetchConversationHistory = createAsyncThunk(
   ) => {
     try {
       const response = await axiosInstance.get(
-        `${ENDPOINTS.fetchConversationHistory()}?store_code=${args.storeCode}&from=${args.from}&to=${args.to}&granularity=${args.granularity}&aggregated=${args.aggregated}`,
+        ENDPOINTS.fetchConversationHistory(),
+        {
+          params: {
+            ...dashboardParams(args),
+            granularity: args.granularity,
+            aggregated: args.aggregated,
+          },
+        },
       );
       const data = response.data.data;
 
@@ -74,13 +119,13 @@ export const FetchConversationHistory = createAsyncThunk(
       const response = isAxiosError(error) ? error.response : undefined;
       const data = response?.data;
 
-      toast.error("Uh oh! Something went wrong.", {
-        description:
-          data?.message ||
-          "Unable to fetch conversation history, please try again later.",
+      toast.error("Couldn't fetch conversation history.", {
+        description: data?.message || "Please try again later.",
       });
 
-      return thunkAPI.rejectWithValue(data || "Something went wrong");
+      return thunkAPI.rejectWithValue(
+        data || "Couldn't fetch conversation history.",
+      );
     }
   },
 );
@@ -97,23 +142,21 @@ type DashboardSummaryResponse = {
 
 export const FetchDashboard = createAsyncThunk(
   "FetchDashboard",
-  async (args: { storeCode: string }, thunkAPI) => {
+  async (args: DashboardFilterArgs, thunkAPI) => {
     try {
-      const response = await axiosInstance.get(
-        `${ENDPOINTS.fetchDashboard()}?store_code=${args.storeCode}`,
-      );
+      const response = await axiosInstance.get(ENDPOINTS.fetchDashboard(), {
+        params: { ...dashboardParams(args), fresh: args.fresh ? 1 : undefined },
+      });
       return response.data.data as DashboardSummaryResponse;
     } catch (error) {
       const response = isAxiosError(error) ? error.response : undefined;
       const data = response?.data;
 
-      toast.error("Uh oh! Something went wrong.", {
-        description:
-          data?.message ||
-          "Unable to fetch dashboard data, please try again later.",
+      toast.error("Couldn't fetch dashboard data.", {
+        description: data?.message || "Please try again later.",
       });
 
-      return thunkAPI.rejectWithValue(data || "Something went wrong");
+      return thunkAPI.rejectWithValue(data || "Couldn't fetch dashboard data.");
     }
   },
 );
@@ -163,8 +206,11 @@ const DashboardSlice = createSlice({
   extraReducers: (builder) => {
     builder
       // Conversation History
-      .addCase(FetchConversationHistory.pending, (state) => {
-        state.FetchConversationHistoryState.FetchConversationHistoryIsLoading = true;
+      .addCase(FetchConversationHistory.pending, (state, action) => {
+        // A background reload keeps the chart on screen; no spinner flash.
+        if (!action.meta.arg.silent) {
+          state.FetchConversationHistoryState.FetchConversationHistoryIsLoading = true;
+        }
         state.FetchConversationHistoryState.FetchConversationHistoryIsSuccess = false;
         state.FetchConversationHistoryState.FetchConversationHistoryIsError =
           null;
@@ -179,7 +225,7 @@ const DashboardSlice = createSlice({
         state.FetchConversationHistoryState.FetchConversationHistoryIsLoading = false;
         state.FetchConversationHistoryState.FetchConversationHistoryIsSuccess = false;
         state.FetchConversationHistoryState.FetchConversationHistoryIsError =
-          action.payload || "Something went wrong";
+          action.payload || "Couldn't fetch conversation history.";
       })
       // Consolidated dashboard: one request fans out into all five widget states.
       .addCase(FetchDashboard.pending, (state) => {
@@ -223,7 +269,7 @@ const DashboardSlice = createSlice({
           d.conversion_rate;
       })
       .addCase(FetchDashboard.rejected, (state, action) => {
-        const err = action.payload || "Something went wrong";
+        const err = action.payload || "Couldn't load dashboard data.";
         state.FetchFeedbackInsightsState.FetchFeedbackInsightsIsLoading = false;
         state.FetchFeedbackInsightsState.FetchFeedbackInsightsIsError = err;
         state.FetchEngagementDataState.FetchEngagementDataIsLoading = false;

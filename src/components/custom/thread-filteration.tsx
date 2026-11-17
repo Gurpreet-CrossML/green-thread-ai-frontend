@@ -1,6 +1,7 @@
 "use client";
 
-import { IconSearch, IconX } from "@tabler/icons-react";
+import { useState } from "react";
+import { IconCheck, IconSearch, IconX } from "@tabler/icons-react";
 
 import { DateRangePicker } from "@/components/custom/date-range-picker";
 import { Button } from "@/components/ui/button";
@@ -12,26 +13,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { tint } from "@/components/custom/tag-badge";
 import {
-  Combobox,
-  ComboboxChip,
-  ComboboxChips,
-  ComboboxChipsInput,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxValue,
-  useComboboxAnchor,
-} from "@/components/ui/combobox";
-import { FEEDBACK_RATINGS, type FeedbackRatingValue } from "@/lib/config";
+  ACTIVE_FILTER_STYLE,
+  FEEDBACK_RATINGS,
+  type FeedbackRatingValue,
+} from "@/lib/config";
+import type { ThreadTagOption } from "@/redux/api-slice/thread-slice";
+import { cn } from "@/lib/utils";
 
 export type FeedbackRating = "" | FeedbackRatingValue;
 
+// No status filter: the Threads list shows closed chats only; live ones are
+// in Live chat.
 export type ThreadFilterState = {
   search: string;
-  is_active: "" | "true" | "false";
   user_type: "" | "guest" | "logged_in";
+  // No control of its own: dashboard links set it ("handled by AI alone").
+  has_agent: "" | "true" | "false";
   has_feedback: "" | "true" | "false";
   feedback_rating: FeedbackRating;
   tags: string[];
@@ -42,8 +41,8 @@ export type ThreadFilterState = {
 
 export const DEFAULT_THREAD_FILTERS: ThreadFilterState = {
   search: "",
-  is_active: "",
   user_type: "",
+  has_agent: "",
   has_feedback: "",
   feedback_rating: "",
   tags: [],
@@ -56,32 +55,37 @@ type ThreadFilterationProps = {
   filters: ThreadFilterState;
   onChange: (filters: ThreadFilterState) => void;
   onClear: () => void;
-  tagOptions: string[];
+  tagOptions: ThreadTagOption[];
   isLoadingTagOptions?: boolean;
 };
 
 // Radix Select forbids empty-string item values, so "All" uses a sentinel
 // that maps back to "" (filter off) in state.
 const ALL = "all";
-const ALL_TAGS = "__all_tags__";
 
-function FilterSelect({
+export function FilterSelect({
   ariaLabel,
   value,
   onChange,
   options,
+  activeClassName,
 }: {
   ariaLabel: string;
   value: string;
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
+  activeClassName?: string;
 }) {
   return (
     <Select
       value={value || ALL}
       onValueChange={(next) => onChange(next === ALL ? "" : next)}
     >
-      <SelectTrigger size="sm" aria-label={ariaLabel} className="w-fit">
+      <SelectTrigger
+        size="sm"
+        aria-label={ariaLabel}
+        className={cn("w-fit", value && activeClassName)}
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -95,72 +99,118 @@ function FilterSelect({
   );
 }
 
-// Multi-select combobox for an "any of the selected values" filter. Filtering
-// happens server-side; this just lets the user build the selection. Options
-// are plain strings (the filter value); `labelFor` maps a value to its
-// display text when that differs (e.g. workflow slugs -> readable labels).
-function MultiSelectFilter({
+// How many tag chips show before "Show more". The most used come first, so
+// the rest can wait behind a button.
+const VISIBLE_TAG_CHIPS = 8;
+
+// The tags threads carry, each as a chip with its thread count — "Payment (12)".
+// Chips toggle: the filter is "any of the selected tags", and none selected
+// means no tag filter. Filtering happens server-side; this just builds the
+// selection. The chips are counted against the other active filters, so a
+// selected tag can drop out of the options (its count would be 0); it stays
+// shown, at 0, so it can still be switched off. Only the first few chips show
+// until "Show more"; a selected chip is always shown, collapsed or not.
+function TagChipFilter({
   options,
   value,
   onChange,
-  labelFor = (option) => option,
-  placeholder,
-  emptyText,
   isLoading,
 }: {
-  options: string[];
+  options: ThreadTagOption[];
   value: string[];
   onChange: (value: string[]) => void;
-  labelFor?: (option: string) => string;
-  placeholder: string;
-  emptyText: string;
   isLoading?: boolean;
 }) {
-  const anchor = useComboboxAnchor();
-  // An empty selection means "no tag filter", shown as a checked "All Tags"
-  // entry. Picking it clears the tags; picking a tag unchecks it.
-  const allChecked = value.length === 0;
+  const [expanded, setExpanded] = useState(false);
+  const isSelected = (name: string) => value.includes(name);
+
+  const missing = value.filter(
+    (item) => !options.some((tag) => tag.name === item),
+  );
+  const chips = [
+    ...options,
+    ...missing.map((name) => ({
+      id: -1,
+      name,
+      color: "",
+      description: "",
+      count: 0,
+    })),
+  ];
+
+  if (chips.length === 0 && !isLoading) return null;
+
+  const shown = expanded
+    ? chips
+    : chips.filter(
+        (tag, index) => index < VISIBLE_TAG_CHIPS || isSelected(tag.name),
+      );
+  const hiddenCount = chips.length - shown.length;
+
+  const toggle = (name: string) =>
+    onChange(
+      isSelected(name)
+        ? value.filter((item) => item !== name)
+        : [...value, name],
+    );
 
   return (
-    <Combobox
-      multiple
-      autoHighlight
-      items={options.length ? [ALL_TAGS, ...options] : []}
-      value={allChecked ? [ALL_TAGS] : value}
-      onValueChange={(next: string[]) => {
-        if (next.includes(ALL_TAGS) && !allChecked) return onChange([]);
-        onChange(next.filter((item) => item !== ALL_TAGS));
-      }}
+    <div
+      role="group"
+      aria-label="Filter by tag"
+      className="flex flex-wrap items-center gap-2"
     >
-      <ComboboxChips ref={anchor} className="w-56">
-        <ComboboxValue>
-          {(selected) => (
-            <>
-              {(selected as string[])
-                .filter((item) => item !== ALL_TAGS)
-                .map((item) => (
-                  <ComboboxChip key={item}>{labelFor(item)}</ComboboxChip>
-                ))}
-              <ComboboxChipsInput
-                placeholder={
-                  value.length ? "" : isLoading ? "Loading…" : placeholder
-                }
-              />
-            </>
-          )}
-        </ComboboxValue>
-      </ComboboxChips>
-      <ComboboxContent anchor={anchor}>
-        <ComboboxEmpty>{isLoading ? "Loading…" : emptyText}</ComboboxEmpty>
-        <ComboboxList>
-          {(item) => (
-            <ComboboxItem key={item} value={item}>
-              {item === ALL_TAGS ? "All Tags" : labelFor(item)}
-            </ComboboxItem>
-          )}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
+      {chips.length === 0 ? (
+        <span className="text-sm text-muted-foreground">Loading…</span>
+      ) : null}
+      {shown.map((tag) => {
+        const selected = isSelected(tag.name);
+        return (
+          <button
+            key={tag.id === -1 ? `missing-${tag.name}` : tag.id}
+            type="button"
+            aria-pressed={selected}
+            title={tag.description || undefined}
+            onClick={() => toggle(tag.name)}
+            className={cn(
+              "inline-flex max-w-full cursor-pointer items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              !tag.color &&
+                (selected
+                  ? "border-foreground/40 bg-accent text-accent-foreground"
+                  : "text-foreground hover:bg-accent/60"),
+            )}
+            style={
+              tag.color
+                ? {
+                    color: tag.color,
+                    backgroundColor: tint(tag.color, selected ? 0.28 : 0.1),
+                    borderColor: selected ? tag.color : tint(tag.color, 0.3),
+                  }
+                : undefined
+            }
+          >
+            {selected ? <IconCheck className="size-3 shrink-0" /> : null}
+            <span className="max-w-40 truncate">{tag.name}</span>
+            <span className="shrink-0 tabular-nums opacity-70">
+              ({tag.count})
+            </span>
+          </button>
+        );
+      })}
+      {expanded || hiddenCount > 0 ? (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto px-1 py-0 text-xs"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show less" : `Show more (${hiddenCount})`}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -173,8 +223,8 @@ export default function ThreadFilteration({
 }: ThreadFilterationProps) {
   const hasActiveFilters =
     filters.search !== "" ||
-    filters.is_active !== "" ||
     filters.user_type !== "" ||
+    filters.has_agent !== "" ||
     filters.has_feedback !== "" ||
     filters.feedback_rating !== "" ||
     filters.tags.length > 0 ||
@@ -183,99 +233,85 @@ export default function ThreadFilteration({
     filters.to !== "";
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-56 flex-1">
-        <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={filters.search}
-          onChange={(event) =>
-            onChange({ ...filters, search: event.target.value })
-          }
-          placeholder="Search name, email, messages…"
-          className="pl-8"
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-64 flex-1">
+          <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filters.search}
+            onChange={(event) =>
+              onChange({ ...filters, search: event.target.value })
+            }
+            placeholder="Search name, email, messages…"
+            className="pl-8"
+          />
+        </div>
+
+        <DateRangePicker
+          from={filters.from}
+          to={filters.to}
+          onRangeChange={(from, to) => onChange({ ...filters, from, to })}
+          disabled={{ after: new Date() }}
         />
-      </div>
 
-      <DateRangePicker
-        from={filters.from}
-        to={filters.to}
-        onRangeChange={(from, to) => onChange({ ...filters, from, to })}
-        disabled={{ after: new Date() }}
-      />
-
-      <FilterSelect
-        ariaLabel="Filter by status"
-        value={filters.is_active}
-        onChange={(is_active) =>
-          onChange({
-            ...filters,
-            is_active: is_active as ThreadFilterState["is_active"],
-          })
-        }
-        options={[
-          { value: "", label: "All Statuses" },
-          { value: "true", label: "Active" },
-          { value: "false", label: "Closed" },
-        ]}
-      />
-
-      <FilterSelect
-        ariaLabel="Filter by handled by"
-        value={filters.handled_by}
-        onChange={(handled_by) =>
-          onChange({
-            ...filters,
-            handled_by: handled_by as ThreadFilterState["handled_by"],
-          })
-        }
-        options={[
-          { value: "", label: "All Handlers" },
-          { value: "ai", label: "AI" },
-          { value: "human", label: "Agent" },
-        ]}
-      />
-
-      <MultiSelectFilter
-        options={tagOptions}
-        value={filters.tags}
-        onChange={(tags) => onChange({ ...filters, tags })}
-        placeholder="All Tags"
-        emptyText="No tags found."
-        isLoading={isLoadingTagOptions}
-      />
-
-      {filters.has_feedback === "true" && (
         <FilterSelect
-          ariaLabel="Filter by feedback rating"
-          value={filters.feedback_rating}
-          onChange={(feedback_rating) =>
+          ariaLabel="Filter by handled by"
+          value={filters.handled_by}
+          activeClassName={ACTIVE_FILTER_STYLE}
+          onChange={(handled_by) =>
             onChange({
               ...filters,
-              feedback_rating: feedback_rating as FeedbackRating,
+              handled_by: handled_by as ThreadFilterState["handled_by"],
             })
           }
           options={[
-            { value: "", label: "All Ratings" },
-            ...FEEDBACK_RATINGS.map((rating) => ({
-              value: rating.value,
-              label: rating.label,
-            })),
+            { value: "", label: "All Handlers" },
+            { value: "ai", label: "AI" },
+            { value: "human", label: "Agent" },
           ]}
         />
-      )}
 
-      {hasActiveFilters && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground"
-          onClick={onClear}
-        >
-          <IconX />
-          Clear
-        </Button>
-      )}
+        {filters.has_feedback === "true" && (
+          <FilterSelect
+            ariaLabel="Filter by feedback rating"
+            value={filters.feedback_rating}
+            activeClassName={ACTIVE_FILTER_STYLE}
+            onChange={(feedback_rating) =>
+              onChange({
+                ...filters,
+                feedback_rating: feedback_rating as FeedbackRating,
+              })
+            }
+            options={[
+              { value: "", label: "All Ratings" },
+              ...FEEDBACK_RATINGS.map((rating) => ({
+                value: rating.value,
+                label: rating.label,
+              })),
+            ]}
+          />
+        )}
+
+        {hasActiveFilters && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={onClear}
+          >
+            <IconX />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      <TagChipFilter
+        options={tagOptions}
+        value={filters.tags}
+        onChange={(tags) => onChange({ ...filters, tags })}
+        isLoading={isLoadingTagOptions}
+      />
     </div>
   );
 }

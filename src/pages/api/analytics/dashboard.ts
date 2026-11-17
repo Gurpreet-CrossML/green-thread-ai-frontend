@@ -24,6 +24,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse<APIResponse>) {
       store_code: req.query.store_code as string | undefined,
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
+      fresh: req.query.fresh === "1",
     });
     return res
       .status(200)

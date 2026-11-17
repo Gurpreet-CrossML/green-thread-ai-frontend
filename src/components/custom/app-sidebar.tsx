@@ -2,8 +2,9 @@
 
 import * as React from "react";
 
-import { NavMain, SidebarMenuItemWrapper } from "@/components/custom/nav-main";
-import { CollapsibleMenuItem } from "@/components/custom/sub-sidebar-menu";
+import { NavMain } from "@/components/custom/nav-main";
+import { SubSidebarList } from "@/components/custom/sub-sidebar-menu";
+import { LOGO_SRC, MobileNavDrawer } from "@/components/custom/mobile-nav";
 import { StoreSwitcher } from "@/components/custom/store-switcher";
 import { NavUser } from "@/components/custom/nav-user";
 import {
@@ -16,12 +17,13 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   activeNavUrl,
   flattenMenuItems,
-  isBranchActive,
   isNavItemVisible,
+  resolveSubSidebarKey,
   sidebarMenus,
   SubSidebarMenuItem,
 } from "@/lib/sidebar-navs";
@@ -36,24 +38,31 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
-import { FetchThreads } from "@/redux/api-slice/thread-slice";
+import { FetchThreadCounts } from "@/redux/api-slice/thread-slice";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { useSupportDashboardEvents } from "@/hooks/use-support-dashboard-events";
+
+// Nothing to subscribe to: only tells hydration apart from later renders.
+const noopSubscribe = () => () => {};
 
 export function AppSidebar({
   className,
   subSidebarItems,
   subSidebarHidden = false,
   onToggleSubSidebar,
+  onSubSidebarNavigate,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   subSidebarItems: SubSidebarMenuItem | null;
   /** Whether the sub-sidebar is currently collapsed away. */
   subSidebarHidden?: boolean;
   onToggleSubSidebar: () => void;
+  /** Called when a link inside the sub-sidebar is followed. */
+  onSubSidebarNavigate?: () => void;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isMobile } = useSidebar();
 
   // Resolved once for the whole group: an entry carrying a query string
   // and its bare-path sibling can both match the path, and only the more
@@ -71,46 +80,18 @@ export function AppSidebar({
   const storeCode = useAppSelector(
     (state) => state.GetStoresReducer.selectedStore,
   );
-  const [needsHumanBadge, setNeedsHumanBadge] = React.useState({
-    storeCode: "",
-    count: 0,
-  });
+  // Shared with the dashboard's Active Sessions card, which reads the same
+  // state and never fetches it itself.
+  const { FetchThreadCountsData } = useAppSelector(
+    (state) => state.GetThreadReducer.FetchThreadCountsState,
+  );
 
   const refreshNeedsHumanBadge = React.useCallback(() => {
     if (!storeCode) {
       return;
     }
 
-    let cancelled = false;
-
-    void dispatch(
-      FetchThreads({
-        store_code: storeCode,
-        page: 1,
-        limit: 1,
-        skipListStateUpdate: true,
-        filters: {
-          is_active: true,
-          need_escalation: true,
-        },
-      }),
-    )
-      .unwrap()
-      .then((response) => {
-        if (cancelled) return;
-
-        setNeedsHumanBadge({
-          storeCode,
-          count: response.count,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setNeedsHumanBadge({ storeCode, count: 0 });
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    void dispatch(FetchThreadCounts({ store_code: storeCode }));
   }, [dispatch, storeCode]);
 
   React.useEffect(() => refreshNeedsHumanBadge(), [refreshNeedsHumanBadge]);
@@ -121,10 +102,29 @@ export function AppSidebar({
 
   // One ordered list, filtered rather than concatenated — a hidden entry
   // leaves the rest in their order. Admins see everything; staff see what
-  // their role allows.
-  const navMain = sidebarMenus.nav.filter((item) =>
-    isNavItemVisible(item, session?.user),
+  // their role allows. The server renders without a session, so hydration
+  // filters the same way and the user's own entries follow right after.
+  const hydrated = React.useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
   );
+  const navMain = sidebarMenus.nav.filter((item) =>
+    isNavItemVisible(item, hydrated ? session?.user : undefined),
+  );
+
+  // A phone has no room for the rail and sub-sidebar side by side: one
+  // drawer, opened from the top bar, holds both.
+  if (isMobile) {
+    return (
+      <MobileNavDrawer
+        navItems={navMain}
+        pathname={pathname}
+        currentAreaKey={resolveSubSidebarKey(pathname)}
+        liveSupportBadgeCount={FetchThreadCountsData.needsHuman}
+      />
+    );
+  }
 
   return (
     <Sidebar
@@ -175,7 +175,7 @@ export function AppSidebar({
                 <Link href="/">
                   <Image
                     className="size-8 object-contain"
-                    src="https://storesignal.ai/wp-content/uploads/2026/01/cropped-logo-mark-final-192x192.png"
+                    src={LOGO_SRC}
                     alt="StoreSignal AI"
                     width={32}
                     height={32}
@@ -190,11 +190,7 @@ export function AppSidebar({
         <SidebarContent>
           <NavMain
             items={navMain}
-            liveSupportBadgeCount={
-              needsHumanBadge.storeCode === storeCode
-                ? needsHumanBadge.count
-                : 0
-            }
+            liveSupportBadgeCount={FetchThreadCountsData.needsHuman}
           />
         </SidebarContent>
         <SidebarFooter>
@@ -205,7 +201,19 @@ export function AppSidebar({
       {/* This is the second sidebar */}
       {/* We disable collapsible and let it fill remaining space */}
       {subSidebarItems && !subSidebarHidden && (
-        <Sidebar collapsible="none" className="min-w-0 flex-1">
+        <Sidebar
+          collapsible="none"
+          className="min-w-0 flex-1"
+          // Bubble phase, deliberately — not `onClickCapture`. A capture
+          // handler runs before the link's own onClick, and closing the menu
+          // there unmounts the link first: its client-side navigation never
+          // runs and the browser follows the href as a full page load.
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("a")) {
+              onSubSidebarNavigate?.();
+            }
+          }}
+        >
           {/* h-16, matching every panel header to its right, so the rules
               across the top of the app are one continuous line. */}
           <SidebarHeader className="h-16 shrink-0 justify-center border-b px-4 py-0">
@@ -219,39 +227,12 @@ export function AppSidebar({
           <SidebarContent>
             <SidebarGroup>
               <SidebarGroupContent className="flex flex-col gap-2">
-                {subSidebarItems.action && <subSidebarItems.action />}
-                <SidebarMenu>
-                  {subSidebarItems.items.map((item) => {
-                    if (item.items && item.items?.length > 0) {
-                      return (
-                        <CollapsibleMenuItem
-                          key={item.title}
-                          pathname={pathname}
-                          title={item.title}
-                          icon={item.icon}
-                          // Open when anything inside is the current
-                          // screen — the parent is a heading, not a link,
-                          // so it is never the active url itself.
-                          defaultOpen={isBranchActive(
-                            item,
-                            pathname,
-                            subNavSearch,
-                          )}
-                          items={item.items}
-                        />
-                      );
-                    }
-                    return (
-                      <SidebarMenuItemWrapper
-                        key={item.title}
-                        item={item}
-                        pathname={pathname}
-                        isActive={item.url === activeSubNavUrl}
-                        expanded
-                      />
-                    );
-                  })}
-                </SidebarMenu>
+                <SubSidebarList
+                  menu={subSidebarItems}
+                  pathname={pathname}
+                  search={subNavSearch}
+                  activeUrl={activeSubNavUrl}
+                />
               </SidebarGroupContent>
             </SidebarGroup>
           </SidebarContent>
