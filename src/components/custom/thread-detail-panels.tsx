@@ -17,7 +17,9 @@ function CardLoadingState() {
  * Cart prices arrive as display strings (e.g. "$9999.0") — reformat the
  * numeric part to two decimals, keeping the store's currency prefix.
  */
-function formatCartPrice(price: string | null | undefined): string | null {
+export function formatCartPrice(
+  price: string | null | undefined,
+): string | null {
   const raw = String(price ?? "").trim();
   if (!raw) return null;
 

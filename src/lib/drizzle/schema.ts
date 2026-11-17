@@ -1034,6 +1034,36 @@ export const aiInsights = pgTable(
   ],
 );
 
+// Hand-added: the company-wide tag list (analytics.SupportTag). The thread
+// analysis writes only these names into ai_insights.tags.
+export const supportTag = pgTable(
+  "support_tag",
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({
+      name: "support_tag_id_seq",
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: 9223372036854775807,
+      cache: 1,
+    }),
+    name: varchar({ length: 100 }).notNull(),
+    description: text().notNull(),
+    color: varchar({ length: 7 }).notNull(),
+    isActive: boolean("is_active").notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
+  },
+  (table) => [unique("support_tag_name_key").on(table.name)],
+);
+
 export const sentimentAnalysis = pgTable(
   "sentiment_analysis",
   {

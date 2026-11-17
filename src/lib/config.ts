@@ -87,6 +87,7 @@ export const ENDPOINTS = {
 
   // Thread-level Analytics (local GETs — no trailing slash).
   fetchThreads: () => "/analytics/threads",
+  fetchThreadCounts: () => "/analytics/thread-counts",
   fetchThreadDetails: (threadId: string) => `/analytics/threads/${threadId}`,
   fetchUserMetadata: (threadId: string) =>
     `/analytics/threads/${threadId}/user-metadata`,
@@ -110,6 +111,17 @@ export const WIDGET_SCRIPT_SRC =
 export const WIDGET_API_BASE = createAPIUrl(undefined, "django");
 
 export const DEFAULT_API_PAGE_SIZE = 15;
+
+/** Shared light highlight for filters with a non-default value. */
+export const ACTIVE_FILTER_STYLE =
+  "border-primary/40 bg-primary/10 text-primary";
+/**
+ * date-fns format of the plain dates the date pickers emit and the APIs take
+ * as `from`/`to`. Everything that writes or reads those values uses it.
+ */
+export const API_DATE_FORMAT = "yyyy-MM-dd";
+/** date-fns format a picked day is shown in. */
+export const DISPLAY_DATE_FORMAT = "MMM dd, yyyy";
 
 // Chatbot feedback rating choices, mirroring the backend RATING_CHOICES.
 export const FEEDBACK_RATINGS = [

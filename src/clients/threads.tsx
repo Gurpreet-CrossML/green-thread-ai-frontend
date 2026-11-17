@@ -20,7 +20,7 @@ import ThreadFilteration, {
 
 const THREAD_FILTER_KEYS = [
   "search",
-  "is_active",
+  "has_agent",
   "handled_by",
   "from",
   "to",
@@ -114,7 +114,7 @@ export default function Threads() {
   const filterSignature = JSON.stringify([
     storeCode,
     debouncedSearch,
-    filters.is_active,
+    filters.has_agent,
     filters.has_feedback,
     filters.feedback_rating,
     filters.tags,
@@ -130,31 +130,50 @@ export default function Threads() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }
 
-  // Fetch whenever the store, page, page size or filters change.
-  // The API is 1-indexed, the table is 0-indexed.
-  useEffect(() => {
-    if (!storeCode) return;
-    const activeFilters = {
+  // Everything that narrows the list except the tag selection. The tag chips
+  // are counted against exactly this, so picking a tag never hides the others.
+  // Closed chats only: live ones belong to Live chat.
+  const baseFilters = useMemo(
+    () => ({
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
-      ...(filters.is_active ? { is_active: filters.is_active === "true" } : {}),
+      is_active: false,
       ...(filters.user_type ? { user_type: filters.user_type } : {}),
+      ...(filters.has_agent ? { has_agent: filters.has_agent === "true" } : {}),
       ...(filters.has_feedback
         ? { has_feedback: filters.has_feedback === "true" }
         : {}),
       ...(filters.feedback_rating
         ? { feedback_rating: filters.feedback_rating }
         : {}),
-      ...(filters.tags.length ? { tags: filters.tags } : {}),
       ...(filters.handled_by ? { handled_by: filters.handled_by } : {}),
       ...(filters.from ? { from: filters.from } : {}),
       ...(filters.to ? { to: filters.to } : {}),
-    };
+    }),
+    [
+      debouncedSearch,
+      filters.user_type,
+      filters.has_agent,
+      filters.has_feedback,
+      filters.feedback_rating,
+      filters.handled_by,
+      filters.from,
+      filters.to,
+    ],
+  );
+
+  // Fetch whenever the store, page, page size or filters change.
+  // The API is 1-indexed, the table is 0-indexed.
+  useEffect(() => {
+    if (!storeCode) return;
     dispatch(
       FetchThreads({
         store_code: storeCode,
         page: pagination.pageIndex + 1,
         limit: pagination.pageSize,
-        filters: activeFilters,
+        filters: {
+          ...baseFilters,
+          ...(filters.tags.length ? { tags: filters.tags } : {}),
+        },
       }),
     );
   }, [
@@ -162,22 +181,18 @@ export default function Threads() {
     storeCode,
     pagination.pageIndex,
     pagination.pageSize,
-    debouncedSearch,
-    filters.is_active,
-    filters.user_type,
-    filters.has_feedback,
-    filters.feedback_rating,
+    baseFilters,
     filters.tags,
-    filters.handled_by,
-    filters.from,
-    filters.to,
   ]);
 
-  // Tag options for the filter bar's tags combobox — refetched per store.
+  // The tag chips: only tags threads carry, with counts that follow the
+  // filters above — refetched when the store or any of them changes.
   useEffect(() => {
     if (!storeCode) return;
-    dispatch(FetchThreadTagOptions({ store_code: storeCode }));
-  }, [dispatch, storeCode]);
+    dispatch(
+      FetchThreadTagOptions({ store_code: storeCode, filters: baseFilters }),
+    );
+  }, [dispatch, storeCode, baseFilters]);
 
   const rows = useMemo(
     () => FetchThreadsListData?.results ?? [],

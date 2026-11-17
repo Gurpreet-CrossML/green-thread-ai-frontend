@@ -204,7 +204,11 @@ export function isMenuItemActive(pathname: string | null, url: string) {
 
 /** The top-level section a path belongs to, including nested routes. */
 export function findMenuSectionByPath(pathname: string | null) {
-  return sidebarMenus.nav.find((item) => isMenuItemActive(pathname, item.url));
+  // An area's icon lands on its first screen; its other screens still
+  // belong to it, so match the area root when there is one.
+  return sidebarMenus.nav.find((item) =>
+    isMenuItemActive(pathname, item.activeBasePath ?? item.url),
+  );
 }
 
 /** Depth-first lookup for the menu item at `url`, searching nested `items` at any depth. */
