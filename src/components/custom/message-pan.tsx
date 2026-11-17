@@ -23,6 +23,11 @@ import {
 } from "@/components/ui/card";
 import {
   IconCheck,
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronUp,
+  IconLayoutList,
   IconLock,
   IconShoppingBag,
   IconSparkles,
@@ -289,71 +294,343 @@ export function describeMessage(
   };
 }
 
-/** Green Thread: tyres the tyre-selection assistant recommended. */
-function TyreCards({ tyres }: { tyres: TyreRecommendation[] }) {
+/** A tyre's display name: brand + model, else its catalogue name. */
+function tyreTitle(tyre: TyreRecommendation): string {
   return (
-    <div className="mt-2 flex justify-start">
-      <div className="flex w-full flex-wrap gap-2">
+    [tyre.brand, tyre.model].filter(Boolean).join(" ") || tyre.name || "Tyre"
+  );
+}
+
+/** The parts of a tyre's size, load/speed rating and season it has. */
+function tyreSpecs(tyre: TyreRecommendation): string[] {
+  return [
+    tyre.size,
+    [tyre.load_index, tyre.speed_rating].filter(Boolean).join(""),
+    tyre.season_title,
+  ].filter((spec): spec is string => Boolean(spec));
+}
+
+/** Green Thread: tyres the tyre-selection assistant recommended, shown with
+ * Store Signal's product card and carousel look. */
+function TyreCards({
+  tyres,
+  alignEnd = false,
+}: {
+  tyres: TyreRecommendation[];
+  /** Start the row on the right (an agent/AI message on the right side). */
+  alignEnd?: boolean;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState<number[]>([]);
+
+  // Track which cards are at least 60% on screen, for the arrows and counter.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const visible = new Set<number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const index = Number((entry.target as HTMLElement).dataset.index);
+          if (entry.isIntersecting) visible.add(index);
+          else visible.delete(index);
+        });
+        setInView([...visible]);
+      },
+      { root: row, threshold: 0.6 },
+    );
+    Array.from(row.children).forEach((card) => observer.observe(card));
+    return () => observer.disconnect();
+  }, [tyres]);
+
+  const firstVisible = inView.length ? Math.min(...inView) + 1 : 1;
+  const lastVisible = inView.length ? Math.max(...inView) + 1 : 1;
+  // Arrows move a full page of cards (1–3 → 4–6), not one card.
+  const scrollPage = (direction: 1 | -1) =>
+    rowRef.current?.scrollBy({
+      left: direction * rowRef.current.clientWidth,
+      behavior: "smooth",
+    });
+
+  return (
+    <div className="mt-2 w-full max-w-full min-w-0">
+      <div
+        ref={rowRef}
+        className="flex snap-x snap-mandatory gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {tyres.map((tyre, idx) => {
-          const title =
-            [tyre.brand, tyre.model].filter(Boolean).join(" ") ||
-            tyre.name ||
-            "Tyre";
-          const specs = [
-            tyre.size,
-            [tyre.load_index, tyre.speed_rating].filter(Boolean).join(""),
-            tyre.season_title,
-          ]
-            .filter(Boolean)
-            .join(" · ");
+          const title = tyreTitle(tyre);
+          const specs = tyreSpecs(tyre);
           return (
-            <a
+            <div
               key={tyre.tyre_id ?? idx}
-              href={tyre.buy_link ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-[240px] max-w-full shrink-0 items-center gap-3 border border-border bg-background p-2.5 no-underline transition-colors hover:bg-muted/50"
-            >
-              {tyre.image_url ? (
-                <Image
-                  src={tyre.image_url}
-                  alt={title}
-                  width={48}
-                  height={48}
-                  // Tyre images come from the store's catalogue host;
-                  // rendered directly rather than through the optimizer.
-                  unoptimized
-                  className="h-12 w-12 shrink-0 bg-muted object-contain"
-                />
-              ) : (
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground">
-                  No img
-                </div>
+              data-index={idx}
+              className={cn(
+                "flex shrink-0 basis-full snap-start flex-col overflow-hidden rounded-md border border-border bg-background min-[380px]:basis-[calc(50%-4px)] sm:basis-[calc(33.333%-6px)]",
+                // An auto margin pushes a short row right, and drops to 0
+                // once the row overflows, so no card is ever cut off.
+                alignEnd && "first:ml-auto",
               )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs leading-snug font-medium text-foreground">
-                  {title}
-                </p>
-                {specs && (
-                  <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                    {specs}
-                  </p>
+            >
+              <a
+                href={tyre.buy_link ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`View ${title}`}
+                className="block bg-white"
+              >
+                {tyre.image_url ? (
+                  <Image
+                    src={tyre.image_url}
+                    alt={title}
+                    width={240}
+                    height={144}
+                    // Tyre images come from the store's catalogue host;
+                    // rendered directly rather than through the optimizer.
+                    unoptimized
+                    className="h-40 w-full object-contain p-2"
+                  />
+                ) : (
+                  <div className="flex h-40 items-center justify-center bg-muted text-xs text-muted-foreground">
+                    No image
+                  </div>
                 )}
+              </a>
+
+              <div className="flex flex-col gap-0.5 p-1.5">
+                <a
+                  href={tyre.buy_link ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="line-clamp-1 text-xs font-medium text-foreground hover:text-primary"
+                  title={title}
+                >
+                  {title}
+                </a>
+
+                {tyre.price != null && (
+                  <div className="text-xs font-semibold text-primary">
+                    {tyre.price} {tyre.currency ?? ""}
+                  </div>
+                )}
+
+                {/* Size, load/speed and season, in Store Signal's variant
+                    chip style (read-only: a tyre has no variants). */}
+                {specs.length > 0 && (
+                  <div className="mt-1 mb-0.5 flex flex-wrap content-start gap-1.5">
+                    {specs.map((spec) => (
+                      <span
+                        key={spec}
+                        title={spec}
+                        className="flex h-[22px] max-w-[90px] min-w-8 items-center truncate rounded-full border border-border bg-background px-2.5 text-[10px] font-semibold whitespace-nowrap text-foreground"
+                      >
+                        {spec}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {tyre.in_stock != null && (
                   <p className="text-[10px] text-muted-foreground">
                     {tyre.in_stock} in stock
                   </p>
                 )}
               </div>
-              {tyre.price != null && (
-                <span className="shrink-0 text-xs font-semibold text-primary">
-                  {tyre.price} {tyre.currency ?? ""}
-                </span>
-              )}
-            </a>
+            </div>
           );
         })}
       </div>
+
+      {inView.length > 0 && inView.length < tyres.length && (
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Previous tyres"
+            onClick={() => scrollPage(-1)}
+            disabled={firstVisible === 1}
+          >
+            <IconChevronLeft />
+          </Button>
+          <span className="min-w-12 text-center text-xs text-muted-foreground">
+            {firstVisible === lastVisible
+              ? firstVisible
+              : `${firstVisible}–${lastVisible}`}{" "}
+            of {tyres.length}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next tyres"
+            onClick={() => scrollPage(1)}
+            disabled={lastVisible === tyres.length}
+          >
+            <IconChevronRight />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** How many tyres the thread transcript's strip shows before "View all". */
+const STRIP_VISIBLE_COUNT = 3;
+
+/**
+ * Green Thread: Store Signal's compact, read-only product strip for the thread
+ * transcript, for tyres. One bordered box with a header ("AI sent N tyres as a
+ * carousel"), a row of the first few tyres, and a "View all" toggle that
+ * expands the box in place into a numbered grid of every tyre the customer
+ * could swipe through. Live chat keeps the card carousel (`TyreCards`).
+ */
+function TyreStrip({ tyres }: { tyres: TyreRecommendation[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const canExpand = tyres.length > STRIP_VISIBLE_COUNT;
+  const shown = expanded ? tyres : tyres.slice(0, STRIP_VISIBLE_COUNT);
+
+  return (
+    <div className="mt-3 w-full max-w-full min-w-0 overflow-hidden rounded-xl border bg-background">
+      <div className="flex items-center justify-between gap-3 px-4 pt-3 text-xs text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-2">
+          <IconLayoutList className="size-4 shrink-0" />
+          <span className="truncate">
+            AI sent{" "}
+            <span className="font-semibold text-foreground">
+              {tyres.length} {tyres.length === 1 ? "tyre" : "tyres"}
+            </span>{" "}
+            as a carousel
+          </span>
+        </span>
+        {canExpand && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/5"
+          >
+            {expanded ? "Show less" : `View all ${tyres.length}`}
+            {expanded ? (
+              <IconChevronUp className="size-4" />
+            ) : (
+              <IconChevronDown className="size-4" />
+            )}
+          </button>
+        )}
+      </div>
+
+      {expanded ? (
+        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 xl:grid-cols-5">
+          {shown.map((tyre, index) => {
+            const title = tyreTitle(tyre);
+            const specs = tyreSpecs(tyre).join(" · ");
+            return (
+              <a
+                key={tyre.tyre_id ?? index}
+                href={tyre.buy_link ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`View ${title}`}
+                className="flex min-w-0 flex-col gap-2 rounded-lg border p-2 transition-colors hover:border-primary"
+              >
+                <span className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md bg-muted">
+                  <span
+                    className={cn(
+                      "absolute top-1.5 left-1.5 z-10 flex size-5 items-center justify-center rounded-full text-[11px] font-semibold text-white",
+                      index < STRIP_VISIBLE_COUNT
+                        ? "bg-foreground"
+                        : "bg-muted-foreground",
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  {tyre.image_url ? (
+                    <Image
+                      src={tyre.image_url}
+                      alt=""
+                      width={160}
+                      height={120}
+                      unoptimized
+                      className="size-full object-contain"
+                    />
+                  ) : null}
+                </span>
+                <span
+                  className="line-clamp-2 min-h-8 text-xs font-medium text-foreground"
+                  title={title}
+                >
+                  {title}
+                </span>
+                {/* A tyre name alone is ambiguous: show its size and season. */}
+                {specs && (
+                  <span
+                    className="truncate text-[11px] text-muted-foreground"
+                    title={specs}
+                  >
+                    {specs}
+                  </span>
+                )}
+                {tyre.price != null && (
+                  <span className="text-sm font-semibold text-primary">
+                    {tyre.price} {tyre.currency ?? ""}
+                  </span>
+                )}
+              </a>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid auto-cols-[minmax(190px,1fr)] grid-flow-col gap-4 overflow-x-auto px-4 pt-3 pb-4">
+          {shown.map((tyre, index) => {
+            const title = tyreTitle(tyre);
+            return (
+              <a
+                key={tyre.tyre_id ?? index}
+                href={tyre.buy_link ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`View ${title}`}
+                className="flex min-w-0 items-center gap-3"
+              >
+                <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+                  {tyre.image_url ? (
+                    <Image
+                      src={tyre.image_url}
+                      alt=""
+                      width={44}
+                      height={44}
+                      unoptimized
+                      className="size-full object-contain"
+                    />
+                  ) : null}
+                </span>
+                <span className="min-w-0">
+                  <span
+                    className="block truncate text-sm font-medium text-foreground"
+                    title={title}
+                  >
+                    {title}
+                  </span>
+                  {tyre.price != null && (
+                    <span className="block text-sm font-semibold text-primary">
+                      {tyre.price} {tyre.currency ?? ""}
+                    </span>
+                  )}
+                </span>
+              </a>
+            );
+          })}
+        </div>
+      )}
+
+      {expanded && (
+        <p className="px-4 pb-3 text-xs text-muted-foreground">
+          Numbers show the order the customer swiped through. Click a tyre to
+          open it.
+        </p>
+      )}
     </div>
   );
 }
@@ -647,7 +924,7 @@ export function MessagePan({
                       </div>
                     ) : null}
 
-                    {hasTyres && tyres ? <TyreCards tyres={tyres} /> : null}
+                    {hasTyres && tyres ? <TyreStrip tyres={tyres} /> : null}
 
                     {hasCartDetails && cartDetails ? (
                       <CartCard
@@ -923,7 +1200,9 @@ export function LiveMessagePan({
                       </div>
                     )}
 
-                    {hasTyres && tyres ? <TyreCards tyres={tyres} /> : null}
+                    {hasTyres && tyres ? (
+                      <TyreCards tyres={tyres} alignEnd={!isCustomer} />
+                    ) : null}
 
                     {message.role === "assistant" &&
                     cartDetails &&
