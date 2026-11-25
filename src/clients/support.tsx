@@ -35,7 +35,6 @@ import {
 } from "@/components/custom/customer-avatar";
 import {
   AdminBadge,
-  AssigneeSelect,
   type AgentOption,
 } from "@/components/custom/assignee-select";
 import {
@@ -43,11 +42,11 @@ import {
   CustomerDetailsPanel,
 } from "@/components/custom/customer-details-panel";
 import { SessionFacts } from "@/components/custom/customer-header";
-import { MultiSelectCombobox } from "@/components/custom/multi-select-combobox";
 import { SearchInput } from "@/components/custom/search-input";
 import { CardTitle } from "@/components/ui/card";
 import { Typography } from "@/components/ui/typography";
 import { LiveMessagePan } from "@/components/custom/message-pan";
+import { MessageIconCircular } from "@/components/icons/MessageIconCircular";
 import {
   FetchCart,
   FetchThreadDetails,
@@ -61,20 +60,13 @@ import {
 } from "@/redux/api-slice/thread-slice";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { FetchStaff, type StaffMember } from "@/redux/api-slice/tenancy-slice";
 import {
   IconAlertTriangle,
   IconArrowBackUp,
   IconArrowLeft,
-  IconFilter,
   IconHeadset,
   IconLock,
-  IconMessageDots,
   IconMoodSmile,
   IconNote,
   IconPaperclip,
@@ -85,7 +77,11 @@ import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { toast } from "sonner";
-import { ACTIVE_FILTER_STYLE, ENDPOINTS } from "@/lib/config";
+import {
+  ENDPOINTS,
+  MAX_MESSAGE_LENGTH,
+  MESSAGE_TOO_LONG_TEXT,
+} from "@/lib/config";
 import { can } from "@/lib/access-rules";
 import EmojiPicker, { EmojiClickData, Theme } from "emoji-picker-react";
 import { formatRelativeDateTime } from "@/lib/helpers";
@@ -99,18 +95,7 @@ import {
 // `is_read` becomes a real field on Thread (and maybe comes from the API),
 // but until then we track it client-side, defaulting to true on load.
 type ThreadWithReadState = Thread & { is_read?: boolean };
-type ThreadFilter = "needs_human" | "ai" | "with_agent" | "all";
-type SupportThreadFilters = {
-  assignees: string[];
-};
-
-function hasAppliedThreadFilters(filters: SupportThreadFilters) {
-  return filters.assignees.length > 0;
-}
-
-const EMPTY_SUPPORT_THREAD_FILTERS: SupportThreadFilters = {
-  assignees: [],
-};
+type ThreadFilter = "ai" | "with_agent" | "all";
 
 // Message teasers render through react-markdown so formatting like **bold**
 // shows properly, but flattened to inline spans: block elements would break
@@ -146,13 +131,10 @@ function getFilteredThreads(
   threads: ThreadWithReadState[],
   activeFilter: ThreadFilter,
 ) {
-  if (activeFilter === "needs_human") {
-    return threads.filter((thread) => thread.need_escalation);
-  }
+  // No Human tab in GT: a chat waiting for a person is still the AI's
+  // until someone takes it over, so it stays under AI.
   if (activeFilter === "ai") {
-    return threads.filter(
-      (thread) => thread.chat_handler === "ai" && !thread.need_escalation,
-    );
+    return threads.filter((thread) => thread.chat_handler === "ai");
   }
   if (activeFilter === "with_agent") {
     return threads.filter((thread) => thread.chat_handler === "human");
@@ -165,7 +147,6 @@ function getThreadFilter(thread: {
   chat_handler?: Thread["chat_handler"];
   need_escalation?: boolean | null;
 }): ThreadFilter | null {
-  if (thread.need_escalation) return "needs_human";
   if (thread.chat_handler === "human") return "with_agent";
   if (thread.chat_handler === "ai") return "ai";
   return null;
@@ -233,7 +214,6 @@ function ThreadChatControls({
   isEmojiPickerOpen,
   setIsEmojiPickerOpen,
   onTakeOver,
-  onReassign,
   onReturnToAI,
   onSendAgentMessage,
   onSendInternalNote,
@@ -261,7 +241,6 @@ function ThreadChatControls({
   isEmojiPickerOpen: boolean;
   setIsEmojiPickerOpen: (value: boolean) => void;
   onTakeOver: () => void;
-  onReassign: (email: string) => void;
   onReturnToAI: () => void;
   onSendAgentMessage: () => void;
   onSendInternalNote: () => void;
@@ -300,15 +279,22 @@ function ThreadChatControls({
   );
   const inputsDisabled = transitionState !== "idle" || isUploadingAttachments;
 
+  // Typing stops at the limit; the box turns red, sending is off, and the
+  // reason shows under the box like a form field's error.
+  const tooLong = composerMessage.length >= MAX_MESSAGE_LENGTH;
+  const changeComposerMessage = (value: string) =>
+    setComposerMessage(value.slice(0, MAX_MESSAGE_LENGTH));
+
   // Notes go over REST; only a reply needs the chat socket.
   const canSend =
+    !tooLong &&
     (composerMessage.trim().length > 0 || attachments.length > 0) &&
     transitionState === "idle" &&
     chatSocketReady &&
     !isUploadingAttachments &&
     !hasFailedAttachments;
   const canSaveInternalNote =
-    composerMessage.trim().length > 0 && transitionState === "idle";
+    !tooLong && composerMessage.trim().length > 0 && transitionState === "idle";
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
     onEmojiSelect(emojiData.emoji);
@@ -333,14 +319,7 @@ function ThreadChatControls({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="order-1 border-b border-border/60 bg-background px-3 py-2 sm:px-4 sm:py-2.5"
           >
-            <div
-              className={cn(
-                "flex gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3",
-                canReassign
-                  ? "flex-col"
-                  : "flex-row items-center justify-between",
-              )}
-            >
+            <div className="flex flex-row items-center justify-between gap-2 sm:gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary sm:size-9">
                   AI
@@ -380,20 +359,7 @@ function ThreadChatControls({
                   </Typography>
                 </div>
               </div>
-              <div
-                className={cn(
-                  "flex min-w-0 items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:shrink-0 sm:gap-3",
-                  canReassign ? "w-full" : "ml-auto w-auto shrink-0",
-                )}
-              >
-                {canReassign && (
-                  <AssigneeSelect
-                    agents={agents}
-                    currentAgent={null}
-                    disabled={transitionState !== "idle" || !chatSocketReady}
-                    onReassign={onReassign}
-                  />
-                )}
+              <div className="ml-auto flex w-auto min-w-0 shrink-0 items-center justify-end gap-1.5 sm:gap-3">
                 {/* Same layoutId as Hand back to AI: framer treats the two as
                     one element and slides it from here into the status row,
                     so the control an agent just pressed is visibly where it
@@ -407,7 +373,7 @@ function ThreadChatControls({
                     disabled={transitionState !== "idle" || !chatSocketReady}
                   >
                     <IconHeadset className="hidden h-4 w-4 sm:block" />
-                    <span className="sm:hidden">Take over</span>
+                    <span className="sm:hidden">Take Over</span>
                     <span className="hidden sm:inline">Take Over</span>
                   </Button>
                 </motion.div>
@@ -428,7 +394,12 @@ function ThreadChatControls({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="order-2 p-2 sm:p-2.5"
           >
-            <div className="overflow-hidden rounded-xl border border-amber-300/80 bg-amber-50 shadow-xs transition-shadow focus-within:border-amber-400 focus-within:shadow-sm dark:border-amber-700/70 dark:bg-amber-950/30">
+            <div
+              className={cn(
+                "overflow-hidden rounded-xl border border-amber-300/80 bg-amber-50 shadow-xs transition-shadow focus-within:border-amber-400 focus-within:shadow-sm dark:border-amber-700/70 dark:bg-amber-950/30",
+                tooLong && "border-red-600 focus-within:border-red-600",
+              )}
+            >
               <div className="flex items-start gap-2 bg-amber-50 px-3 py-1.5 text-xs leading-snug text-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
                 <IconLock className="mt-0.5 size-3 shrink-0 text-amber-700 dark:text-amber-300" />
                 <span>
@@ -442,11 +413,13 @@ function ThreadChatControls({
                   placeholder="Add a note for your team."
                   value={composerMessage}
                   disabled={isSavingInternalNote || transitionState !== "idle"}
-                  onChange={(event) => setComposerMessage(event.target.value)}
+                  onChange={(event) =>
+                    changeComposerMessage(event.target.value)
+                  }
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
-                      onSendInternalNote();
+                      if (!tooLong) onSendInternalNote();
                     }
                   }}
                   className="max-h-20 min-h-12 w-full resize-none bg-transparent py-0.5 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
@@ -459,7 +432,7 @@ function ThreadChatControls({
                     size="sm"
                     onClick={onSendInternalNote}
                     disabled={!canSaveInternalNote || isSavingInternalNote}
-                    title="Save internal note"
+                    title="Save Internal Note"
                     className="h-8 bg-amber-700 px-3 text-xs text-white hover:bg-amber-800 sm:text-sm dark:bg-amber-600 dark:hover:bg-amber-500"
                   >
                     {isSavingInternalNote ? (
@@ -467,10 +440,15 @@ function ThreadChatControls({
                     ) : (
                       <IconNote className="size-3.5 sm:size-4" />
                     )}
-                    Add note
+                    Add Note
                   </Button>
                 </div>
               </div>
+              {tooLong && (
+                <p className="px-3 pb-2 text-xs text-destructive">
+                  {MESSAGE_TOO_LONG_TEXT}
+                </p>
+              )}
             </div>
           </motion.div>
         )}
@@ -499,24 +477,12 @@ function ThreadChatControls({
                   {lockedByAdmin
                     ? "Only an admin can reassign this chat."
                     : canReassign
-                      ? `AI is paused · As a ${reassignRoleLabel}, you can take over or reassign.`
+                      ? `AI is paused · As a ${reassignRoleLabel}, you can take over.`
                       : `AI is paused · You can add internal notes for ${connectedAgentName || "this agent"}.`}
                 </Typography>
               </div>
             </div>
             <div className="flex w-full min-w-0 shrink-0 flex-nowrap items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-3">
-              <AssigneeSelect
-                agents={agents}
-                currentAgent={connectedAgent}
-                currentAgentName={connectedAgentName}
-                disabled={
-                  !canReassign ||
-                  transitionState !== "idle" ||
-                  !chatSocketReady ||
-                  lockedByAdmin
-                }
-                onReassign={onReassign}
-              />
               {canReassign && (
                 <Button
                   type="button"
@@ -530,7 +496,7 @@ function ThreadChatControls({
                   }
                 >
                   <IconHeadset className="h-4 w-4" />
-                  Take over
+                  Take Over
                 </Button>
               )}
             </div>
@@ -564,15 +530,6 @@ function ThreadChatControls({
               </div>
             </div>
             <div className="flex w-full min-w-0 shrink-0 items-center justify-end gap-1.5 sm:w-auto sm:gap-3">
-              <AssigneeSelect
-                agents={agents}
-                currentAgent={connectedAgent}
-                currentAgentName={connectedAgentName}
-                disabled={
-                  !canReassign || transitionState !== "idle" || !chatSocketReady
-                }
-                onReassign={onReassign}
-              />
               <motion.div layoutId={HANDOVER_ACTION_ID} className="shrink-0">
                 <Button
                   type="button"
@@ -583,7 +540,7 @@ function ThreadChatControls({
                   disabled={transitionState !== "idle" || !chatSocketReady}
                 >
                   <IconArrowBackUp className="size-3.5 sm:size-4" />
-                  Hand back to AI
+                  Hand Back To AI
                 </Button>
               </motion.div>
             </div>
@@ -597,7 +554,10 @@ function ThreadChatControls({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="order-2 m-2 overflow-hidden rounded-lg border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm sm:m-2.5"
+            className={cn(
+              "order-2 m-2 overflow-hidden rounded-lg border border-border/60 bg-background shadow-xs transition-shadow focus-within:border-primary/50 focus-within:shadow-sm sm:m-2.5",
+              tooLong && "border-red-600 focus-within:border-red-600",
+            )}
           >
             {isEmojiPickerOpen && (
               <div className="border-b border-border/50 p-2">
@@ -673,7 +633,7 @@ function ThreadChatControls({
                         disabled={isUploading}
                         className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-background/80 text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-0"
                         onClick={() => onRemoveAttachment(attachment.id)}
-                        title={isUploading ? "Uploading…" : "Remove attachment"}
+                        title={isUploading ? "Uploading…" : "Remove Attachment"}
                       >
                         <IconX className="h-3 w-3" />
                       </button>
@@ -695,11 +655,11 @@ function ThreadChatControls({
                 }
                 value={composerMessage}
                 disabled={inputsDisabled}
-                onChange={(event) => setComposerMessage(event.target.value)}
+                onChange={(event) => changeComposerMessage(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    onSendAgentMessage();
+                    if (!tooLong) onSendAgentMessage();
                   }
                 }}
                 className="max-h-24 min-h-12 w-full resize-none bg-transparent py-0.5 text-xs leading-5 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm sm:leading-6"
@@ -719,7 +679,7 @@ function ThreadChatControls({
                   isEmojiPickerOpen && "ring-2 ring-ring/40",
                 )}
                 onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)}
-                title="Add emoji"
+                title="Add Emoji"
               >
                 <IconMoodSmile className="size-4" />
               </Button>
@@ -729,7 +689,7 @@ function ThreadChatControls({
                 size="icon-sm"
                 disabled={inputsDisabled}
                 onClick={() => fileInputRef.current?.click()}
-                title="Attach image or file"
+                title="Attach Image Or File"
                 className="size-7 sm:size-8"
               >
                 <IconPaperclip className="size-4" />
@@ -759,7 +719,7 @@ function ThreadChatControls({
                     as="span"
                     className="hidden 2xl:inline"
                   >
-                    {attachments.length} attached
+                    {attachments.length} Attached
                   </Typography>
                 )}
                 <Button
@@ -773,7 +733,7 @@ function ThreadChatControls({
                 >
                   <IconNote className="size-3.5 sm:size-4" />
                   <span className="hidden xl:inline">
-                    Send as Internal Note
+                    Send As Internal Note
                   </span>
                   <span className="xl:hidden">Note</span>
                 </Button>
@@ -794,6 +754,11 @@ function ThreadChatControls({
                 </Button>
               </div>
             </div>
+            {tooLong && (
+              <p className="px-3 pb-2 text-xs text-destructive">
+                {MESSAGE_TOO_LONG_TEXT}
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -920,19 +885,10 @@ export default function Support() {
   const [debouncedThreadSearch, setDebouncedThreadSearch] = useState("");
   const [readFilter, setReadFilter] = useState<ThreadFilter>(() => {
     const filter = searchParams?.get("filter");
-    return filter === "needs_human" ||
-      filter === "ai" ||
-      filter === "with_agent" ||
-      filter === "all"
+    return filter === "ai" || filter === "with_agent" || filter === "all"
       ? filter
       : "all";
   });
-  const [hasManualTabSelection, setHasManualTabSelection] = useState(false);
-  const [isThreadFilterOpen, setIsThreadFilterOpen] = useState(false);
-  const [appliedThreadFilters, setAppliedThreadFilters] =
-    useState<SupportThreadFilters>(EMPTY_SUPPORT_THREAD_FILTERS);
-  const [draftThreadFilters, setDraftThreadFilters] =
-    useState<SupportThreadFilters>(EMPTY_SUPPORT_THREAD_FILTERS);
   const [replyWithAILoadingId, setReplyWithAILoadingId] = useState<
     string | number | null
   >(null);
@@ -1084,16 +1040,7 @@ export default function Support() {
     FetchThreadsIsSuccess &&
     !FetchThreadsIsLoading &&
     FetchThreadsListData !== listOnArrival;
-  const hasAppliedFilters = hasAppliedThreadFilters(appliedThreadFilters);
-  const activeReadFilter =
-    threadsReady &&
-    hasAppliedFilters &&
-    !hasManualTabSelection &&
-    readFilter !== "all" &&
-    localThreads.length > 0 &&
-    getFilteredThreads(localThreads, readFilter).length === 0
-      ? "all"
-      : readFilter;
+  const activeReadFilter = readFilter;
   const filterScopedThreads = useMemo(
     () => getFilteredThreads(localThreads, activeReadFilter),
     [activeReadFilter, localThreads],
@@ -1233,11 +1180,8 @@ export default function Support() {
 
   const threadTabCounts = useMemo(
     () => ({
-      needs_human: visibleThreads.filter((thread) => thread.need_escalation)
+      ai: visibleThreads.filter((thread) => thread.chat_handler === "ai")
         .length,
-      ai: visibleThreads.filter(
-        (thread) => thread.chat_handler === "ai" && !thread.need_escalation,
-      ).length,
       with_agent: visibleThreads.filter(
         (thread) => thread.chat_handler === "human",
       ).length,
@@ -1264,13 +1208,10 @@ export default function Support() {
           // Resolved server-side so it can reach customer email, name and
           // messages — none of which are on the thread rows themselves.
           ...(debouncedThreadSearch ? { search: debouncedThreadSearch } : {}),
-          ...(appliedThreadFilters.assignees.length
-            ? { assignee: appliedThreadFilters.assignees }
-            : {}),
         },
       }),
     );
-  }, [appliedThreadFilters, dispatch, storeCode, debouncedThreadSearch]);
+  }, [dispatch, storeCode, debouncedThreadSearch]);
 
   useEffect(() => {
     const timeout = setTimeout(
@@ -1358,45 +1299,6 @@ export default function Support() {
       setTransitionState("idle");
     }
   }, [activeThreadId, canHandleChats]);
-
-  // Admin and supervisor: hands the chat to another agent. Sent over the same
-  // handler_change channel as Take Over, naming the agent to assign. An empty
-  // email is the picker's "Unassigned": the chat goes back to the AI.
-  const handleReassign = useCallback(
-    (email: string) => {
-      if (!canReassign) {
-        toast.error("Permission Issue!", {
-          description: "You do not have permission to perform this action.",
-        });
-        return;
-      }
-
-      if (
-        !activeThreadId ||
-        !wsRef.current ||
-        wsRef.current.readyState !== WebSocket.OPEN
-      ) {
-        setTransitionState("idle");
-        return;
-      }
-
-      try {
-        const assigningToAI = !email;
-        setTransitionState(assigningToAI ? "returning_to_ai" : "taking_over");
-        wsRef.current.send(
-          JSON.stringify({
-            action_type: "handler_change",
-            chat_handler: assigningToAI ? "ai" : "human",
-            ...(assigningToAI ? {} : { chat_handler_user: email }),
-          }),
-        );
-      } catch (error) {
-        console.error(error);
-        setTransitionState("idle");
-      }
-    },
-    [activeThreadId, canReassign],
-  );
 
   const handleReturnToAI = useCallback(async () => {
     if (!canHandleChats) {
@@ -1607,7 +1509,10 @@ export default function Support() {
   );
 
   const handleEmojiSelect = useCallback((emoji: string) => {
-    setComposerMessage((prev) => `${prev}${emoji}`);
+    // Past the message limit the emoji is not added, as typing stops there.
+    setComposerMessage((prev) =>
+      `${prev}${emoji}`.length > MAX_MESSAGE_LENGTH ? prev : `${prev}${emoji}`,
+    );
     setIsEmojiPickerOpen(false);
   }, []);
 
@@ -1656,11 +1561,15 @@ export default function Support() {
       setPortraitView("conversation");
       setAttachments([]);
       setAppliedChatParam(threadId);
-      router.replace(`${pathname}?chat=${encodeURIComponent(threadId)}`, {
+      // Keep the other params (?filter=…) so opening a chat doesn't reset
+      // the tab.
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.set("chat", threadId);
+      router.replace(`${pathname}?${params.toString()}`, {
         scroll: false,
       });
     },
-    [router, pathname],
+    [router, pathname, searchParams],
   );
 
   // Insert or patch a thread in localThreads based on an incoming dashboard
@@ -1790,25 +1699,9 @@ export default function Support() {
             currentThread?.need_escalation ??
             false,
         };
-        const hasAppliedFilters = appliedThreadFilters.assignees.length > 0;
-
-        if (hasAppliedFilters) {
-          const projectedThreads = localThreads.map((thread) =>
-            thread.id === event.data.thread_id
-              ? { ...thread, ...updatedThread }
-              : thread,
-          );
-          if (
-            projectedThreads.length > 0 &&
-            getFilteredThreads(projectedThreads, activeReadFilter).length === 0
-          ) {
-            setReadFilter("all");
-          }
-        } else {
-          const nextFilter = getThreadFilter(updatedThread);
-          if (nextFilter && nextFilter !== activeReadFilter) {
-            setReadFilter(nextFilter);
-          }
+        const nextFilter = getThreadFilter(updatedThread);
+        if (nextFilter && nextFilter !== activeReadFilter) {
+          setReadFilter(nextFilter);
         }
       }
 
@@ -2137,128 +2030,31 @@ export default function Support() {
         <SidebarHeader className="gap-0 p-0">
           <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
             <CardTitle className="flex items-center gap-2">
-              Live chats
+              Live Chats
             </CardTitle>
           </div>
 
           <div className="flex flex-col gap-2.5 border-b px-4 py-2.5">
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <SearchInput
-                  value={threadSearch}
-                  onChange={setThreadSearch}
-                  placeholder="Search name, email or message…"
-                  label="Search conversations"
-                />
-              </div>
-              <Popover
-                open={isThreadFilterOpen}
-                onOpenChange={(open) => {
-                  setIsThreadFilterOpen(open);
-                  if (open) {
-                    setDraftThreadFilters({
-                      assignees: [...appliedThreadFilters.assignees],
-                    });
-                  }
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    className={cn(
-                      "relative shrink-0",
-                      hasAppliedThreadFilters(appliedThreadFilters) &&
-                        ACTIVE_FILTER_STYLE,
-                    )}
-                    aria-label="Filter conversations"
-                  >
-                    <IconFilter className="size-4" />
-                    {appliedThreadFilters.assignees.length > 0 ? (
-                      <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                        {appliedThreadFilters.assignees.length}
-                      </span>
-                    ) : null}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="w-[calc(100vw-2rem)] max-w-80 p-0"
-                >
-                  <div className="border-b px-4 py-3">
-                    <CardTitle>Filter Conversations</CardTitle>
-                  </div>
-                  <div className="space-y-5 p-4">
-                    <fieldset>
-                      <legend className="mb-2">
-                        <Typography variant="small" as="span">
-                          Assignee
-                        </Typography>
-                      </legend>
-                      <MultiSelectCombobox
-                        options={agents.map((agent) => ({
-                          value: agent.email,
-                          label: agent.name,
-                        }))}
-                        value={draftThreadFilters.assignees}
-                        onValueChange={(assignees) =>
-                          setDraftThreadFilters((current) => ({
-                            ...current,
-                            assignees,
-                          }))
-                        }
-                        placeholder="Search assignees…"
-                        emptyMessage="No assignees found."
-                      />
-                    </fieldset>
-                  </div>
-                  <div className="flex justify-between border-t p-3">
-                    {appliedThreadFilters.assignees.length > 0 ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setDraftThreadFilters(EMPTY_SUPPORT_THREAD_FILTERS);
-                          setAppliedThreadFilters(EMPTY_SUPPORT_THREAD_FILTERS);
-                          setHasManualTabSelection(false);
-                          setIsThreadFilterOpen(false);
-                        }}
-                      >
-                        Clear
-                      </Button>
-                    ) : (
-                      <span />
-                    )}
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setAppliedThreadFilters({
-                          assignees: [...draftThreadFilters.assignees],
-                        });
-                        setHasManualTabSelection(false);
-                        setIsThreadFilterOpen(false);
-                      }}
-                    >
-                      Apply Filters
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/60 p-1">
+            <SearchInput
+              value={threadSearch}
+              onChange={setThreadSearch}
+              placeholder="Search name, email or message…"
+              label="Search conversations"
+            />
+            {/* Each tab is as wide as its label plus an equal share of the
+                rest: equal columns squeezed a long label past its count. */}
+            <div className="flex gap-1 rounded-xl bg-muted/60 p-1">
               {(
                 [
-                  { key: "needs_human", label: "Human" },
+                  { key: "all", label: "All" },
                   { key: "ai", label: "AI" },
                   { key: "with_agent", label: "Agent" },
-                  { key: "all", label: "All" },
                 ] as const
               ).map((option) => (
                 <button
                   key={option.key}
                   type="button"
                   onClick={() => {
-                    setHasManualTabSelection(true);
                     setReadFilter(option.key);
 
                     const params = new URLSearchParams(
@@ -2282,7 +2078,7 @@ export default function Support() {
                     });
                   }}
                   className={cn(
-                    "flex min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium whitespace-nowrap transition-colors",
+                    "flex flex-auto items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-xs font-medium whitespace-nowrap transition-colors",
                     activeReadFilter === option.key
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
@@ -2292,11 +2088,9 @@ export default function Support() {
                   <span
                     className={cn(
                       "rounded-md px-1.5 text-xs",
-                      option.key === "needs_human"
-                        ? "bg-red-50 text-red-700"
-                        : activeReadFilter === option.key
-                          ? "bg-primary/10 text-primary"
-                          : "bg-muted text-foreground/70",
+                      activeReadFilter === option.key
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-foreground/70",
                     )}
                   >
                     {threadTabCounts[option.key]}
@@ -2402,13 +2196,11 @@ export default function Support() {
               ) : threadSearch || activeReadFilter !== "all" ? (
                 <div className="flex flex-col items-center justify-center gap-1 p-6 text-center">
                   <Typography variant="small" as="p">
-                    {activeReadFilter === "needs_human"
-                      ? "No chats need human help"
-                      : activeReadFilter === "ai"
-                        ? "No AI-handled chats"
-                        : activeReadFilter === "with_agent"
-                          ? "No chats with agents"
-                          : "No matches"}
+                    {activeReadFilter === "ai"
+                      ? "No AI-Handled Chats"
+                      : activeReadFilter === "with_agent"
+                        ? "No Chats With Agents"
+                        : "No Matches"}
                   </Typography>
                   <Typography variant="muted">
                     {threadSearch
@@ -2511,11 +2303,17 @@ export default function Support() {
                 ) : (
                   <div className="flex min-h-0 flex-1 flex-col">
                     <div className="min-h-0 flex-1 overflow-y-auto p-1 sm:p-3">
-                      {threadMessages.length > 0 ? (
+                      {/* Assignments and take-overs show even before the first
+                          message; "No Messages Yet" is only for a chat with
+                          nothing in it at all. */}
+                      {threadMessages.length > 0 || handlerEvents.length > 0 ? (
                         <LiveMessagePan
                           messages={threadMessages}
                           handlerEvents={handlerEvents}
-                          customerName={selectedThread?.customer?.name}
+                          customerName={
+                            selectedThread?.customer?.name ||
+                            selectedThread?.customer?.email
+                          }
                           onReplyWithAI={
                             connectedAgent === session?.user?.email
                               ? handleReplyWithAI
@@ -2526,20 +2324,22 @@ export default function Support() {
                       ) : (
                         <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
                           <div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                            <IconMessageDots className="size-8" stroke={1.5} />
+                            <MessageIconCircular className="size-8" />
                           </div>
                           <Typography
                             variant="small"
                             as="p"
                             className="text-lg font-semibold"
                           >
-                            No messages yet
+                            No Messages Yet
                           </Typography>
                           <Typography
                             variant="muted"
                             className="max-w-md text-sm leading-relaxed"
                           >
-                            {selectedThread?.customer?.name || "This customer"}{" "}
+                            {selectedThread?.customer?.name ||
+                              selectedThread?.customer?.email ||
+                              "This customer"}{" "}
                             opened the chat but hasn&apos;t written anything.
                             {selectedThread?.chat_handler === "human" &&
                             selectedThread.chat_handler_user?.name
@@ -2600,7 +2400,6 @@ export default function Support() {
                         canReassign={canReassign}
                         agents={agents}
                         chatSocketReady={chatSocketReady}
-                        onReassign={handleReassign}
                         transitionState={transitionState}
                         composerMessage={composerMessage}
                         setComposerMessage={setComposerMessage}
@@ -2634,26 +2433,24 @@ export default function Support() {
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
             <div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <IconMessageDots className="size-8" stroke={1.5} />
+              <MessageIconCircular className="size-8" />
             </div>
             <Typography
               variant="small"
               as="p"
               className="text-lg font-semibold"
             >
-              No active chats
+              No Active Chats
             </Typography>
             <Typography
               variant="muted"
               className="max-w-md text-sm leading-relaxed"
             >
-              {activeReadFilter === "needs_human"
-                ? "Chats needing human help will appear here."
-                : activeReadFilter === "ai"
-                  ? "AI-handled chats will appear here."
-                  : activeReadFilter === "with_agent"
-                    ? "Chats assigned to agents will appear here."
-                    : "New active chats will appear here when customers message in."}
+              {activeReadFilter === "ai"
+                ? "AI-handled chats will appear here."
+                : activeReadFilter === "with_agent"
+                  ? "Chats assigned to agents will appear here."
+                  : "New active chats will appear here when customers message in."}
             </Typography>
           </div>
         )}

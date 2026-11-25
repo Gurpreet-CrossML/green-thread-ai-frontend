@@ -8,7 +8,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
+import { cn, titleWhenClipped } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -77,7 +77,9 @@ export function SidebarMenuItemWrapper({
           {item.icon && (
             <item.icon className={cn(active ? "text-primary!" : "")} />
           )}
-          <span>{item.title}</span>
+          <span onMouseEnter={expanded ? titleWhenClipped : undefined}>
+            {item.title}
+          </span>
           {badgeCount > 0 && (
             <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
               {badgeCount}

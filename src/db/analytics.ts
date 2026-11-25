@@ -707,6 +707,9 @@ export async function get_engagements(params: {
 
   return {
     total_threads: totalThreads,
+    // "resolved" counts open threads and "abandoned" closed ones (old names).
+    active_threads: resolvedSessions,
+    closed_threads: abandonedSessions,
     avg_interaction_depth: avgInteractionDepth,
     avg_response_time_seconds: avgResponseTimeSeconds,
     new_vs_returning: {

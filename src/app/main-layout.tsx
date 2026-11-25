@@ -4,11 +4,13 @@ import { AppSidebar } from "@/components/custom/app-sidebar";
 import { MobileTopBar } from "@/components/custom/mobile-nav";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import {
+  isAreaVisible,
   resolveSubSidebarKey,
   sidebarMenus,
   SubSidebarMenuItem,
 } from "@/lib/sidebar-navs";
-import { Suspense, useState } from "react";
+import { Suspense, useState, useSyncExternalStore } from "react";
+import { useSession } from "next-auth/react";
 import { useIsBelowLg } from "@/hooks/use-narrow-viewport";
 import {
   Empty,
@@ -22,6 +24,8 @@ import { isAuthPage } from "@/lib/auth-routes";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/redux/hooks";
 import { usePathname } from "next/navigation";
+
+const noopSubscribe = () => () => {};
 
 function StoreLoading() {
   return (
@@ -69,7 +73,22 @@ export default function MainLayout({
   // link. Computed here rather than in AppSidebar because the sidebar's
   // width is a provider-level CSS variable that both the layout gap and the
   // fixed container read.
-  const subSidebarKey = resolveSubSidebarKey(pathname);
+  const routeSubSidebarKey = resolveSubSidebarKey(pathname);
+  // A role that cannot open the area gets no area menu beside its lock
+  // screen. Checked only after hydration: the server renders without a
+  // session, so hiding it there would flash for everyone who may open it.
+  const { data: session } = useSession();
+  const hydrated = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
+  const subSidebarKey =
+    routeSubSidebarKey &&
+    hydrated &&
+    !isAreaVisible(routeSubSidebarKey, session?.user)
+      ? null
+      : routeSubSidebarKey;
   const subSidebarItems: SubSidebarMenuItem | null = subSidebarKey
     ? (sidebarMenus.navSubSidebar?.[subSidebarKey] ?? null)
     : null;

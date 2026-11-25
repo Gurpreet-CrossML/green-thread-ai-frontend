@@ -26,7 +26,7 @@ import {
   type SideBarMenuItem,
   type SubSidebarMenuItem,
 } from "@/lib/sidebar-navs";
-import { cn } from "@/lib/utils";
+import { cn, titleWhenClipped } from "@/lib/utils";
 
 /**
  * A sub-sidebar section that holds its own screens.
@@ -91,7 +91,7 @@ export function CollapsibleMenuItem({
                         )}
                       />
                     )}
-                    <span>{subItem.title}</span>
+                    <span onMouseEnter={titleWhenClipped}>{subItem.title}</span>
                   </Link>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>

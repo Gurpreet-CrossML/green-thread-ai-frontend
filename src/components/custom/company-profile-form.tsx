@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFormik } from "formik";
 import {
+  IconBuilding,
+  IconCircleCheck,
   IconDeviceFloppy,
-  IconPencil,
-  IconPhoto,
-  IconPlus,
+  IconLock,
+  IconPhotoPlus,
   IconTrash,
+  IconUpload,
 } from "@tabler/icons-react";
 
-import { InfoIcon } from "@/components/custom/info-icon";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,26 +23,14 @@ import {
 } from "@/components/ui/card";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Typography } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/custom/loading-state";
+import { LocationSelect } from "@/components/custom/location-select";
+import { UnsavedChangesDialog } from "@/components/custom/unsaved-changes-dialog";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import z from "zod";
+import { companyProfileSchema } from "@/lib/company-profile-schema";
 import { applyServerFieldErrors, formikErrorsFromZod } from "@/lib/form-errors";
 import {
   FetchCompanyProfile,
@@ -56,29 +45,34 @@ const EDITABLE_FIELDS = [
   { name: "phone", label: "Phone", type: "text" },
 ] as const;
 
-const validationSchema = z.object({
-  email: z
-    .string()
-    .min(1, "Company email is required.")
-    .email("Enter a valid email address."),
-  phone: z
-    .string()
-    .optional()
-    .refine(
-      (val) => !val || /^[+\d()[\]\s\-]+$/.test(val),
-      "Phone may only contain digits, spaces, +, -, (, ).",
-    )
-    .refine((val) => {
-      if (!val) return true;
-
-      const digitCount = val.replace(/\D/g, "").length;
-      return digitCount >= 7 && digitCount <= 15;
-    }, "Enter a valid phone number."),
-  city: z.number().int().positive().nullable(),
-  street: z.string().optional(),
-  state: z.number().int().positive().nullable(),
-  country: z.number().int().positive().nullable(),
-});
+/** A value set by the platform operator: shown, but locked. */
+function LockedField({
+  id,
+  label,
+  value,
+  className,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className="relative">
+        <Input
+          id={id}
+          value={value}
+          readOnly
+          aria-readonly
+          className={cn("bg-muted pr-9 text-muted-foreground", className)}
+        />
+        <IconLock className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
+      </div>
+    </Field>
+  );
+}
 
 export default function CompanyProfileForm({
   className,
@@ -91,12 +85,22 @@ export default function CompanyProfileForm({
   );
   const {
     FetchCountriesData: countries,
-    FetchCountriesIsLoading: countriesLoading,
+    FetchCountriesIsLoading: countriesFetching,
+    FetchCountriesIsSuccess: countriesLoaded,
+    FetchCountriesIsError: countriesFailed,
   } = useAppSelector((state) => state.GetTenancyReducer.FetchCountriesState);
-  const { FetchStatesData: states, FetchStatesIsLoading: statesLoading } =
-    useAppSelector((state) => state.GetTenancyReducer.FetchStatesState);
-  const { FetchCitiesData: cities, FetchCitiesIsLoading: citiesLoading } =
-    useAppSelector((state) => state.GetTenancyReducer.FetchCitiesState);
+  const {
+    FetchStatesData: states,
+    FetchStatesIsLoading: statesFetching,
+    FetchStatesIsSuccess: statesLoaded,
+    FetchStatesIsError: statesFailed,
+  } = useAppSelector((state) => state.GetTenancyReducer.FetchStatesState);
+  const {
+    FetchCitiesData: cities,
+    FetchCitiesIsLoading: citiesFetching,
+    FetchCitiesIsSuccess: citiesLoaded,
+    FetchCitiesIsError: citiesFailed,
+  } = useAppSelector((state) => state.GetTenancyReducer.FetchCitiesState);
 
   // Logo is staged and applied on Save: a new File to upload, or `removeLogo`
   // to clear the saved one.
@@ -149,17 +153,17 @@ export default function CompanyProfileForm({
       email: companyProfile?.email ?? "",
       phone: companyProfile?.phone ?? "",
       street: companyProfile?.street ?? "",
-      city: companyProfile?.city?.id ?? null,
-      state: companyProfile?.state?.id ?? null,
-      country: companyProfile?.country?.id ?? null,
+      city: companyProfile?.city ?? null,
+      state: companyProfile?.state ?? null,
+      country: companyProfile?.country ?? null,
     },
     validate: (values) => {
-      const result = validationSchema.safeParse(values);
+      const result = companyProfileSchema.safeParse(values);
       if (result.success) return {};
       return formikErrorsFromZod(result.error.issues);
     },
     onSubmit: async (values) => {
-      const parsedValues = validationSchema.parse(values);
+      const parsedValues = companyProfileSchema.parse(values);
       const result = await dispatch(
         UpdateCompanyProfile({
           ...parsedValues,
@@ -173,6 +177,7 @@ export default function CompanyProfileForm({
       if (UpdateCompanyProfile.rejected.match(result)) {
         applyServerFieldErrors(formik, result.payload);
       }
+      return UpdateCompanyProfile.fulfilled.match(result);
     },
   });
 
@@ -210,22 +215,46 @@ export default function CompanyProfileForm({
     formik.setFieldValue("city", Number(city));
   };
 
+  // Loading until a fetch has finished (not just while it is in flight), so the
+  // first render, before the effects dispatch, doesn't flash an empty select.
+  // A state or city list is only needed once its parent is chosen.
+  const countriesLoading =
+    countriesFetching || (!countriesLoaded && !countriesFailed);
+  const statesLoading =
+    formik.values.country !== null &&
+    (statesFetching || (!statesLoaded && !statesFailed));
+  const citiesLoading =
+    formik.values.state !== null &&
+    (citiesFetching || (!citiesLoaded && !citiesFailed));
+
   if (companyLoading && !companyProfile) {
     return <LoadingState />;
   }
 
+  const hasChanges = formik.dirty || hasLogoChange;
+
   return (
-    <div className={cn("w-full", className)}>
-      <form onSubmit={formik.handleSubmit} className="flex flex-col gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Company Identity
-              <InfoIcon text="The company name and code are set by the platform operator and can't be edited here. Contact them if either needs to change." />
-            </CardTitle>
-            <CardDescription>
-              Your company&apos;s logo, name, and code.
-            </CardDescription>
+    <div className={cn("flex w-full flex-1 flex-col", className)}>
+      <form
+        onSubmit={formik.handleSubmit}
+        className="flex flex-1 flex-col gap-6"
+      >
+        {/* One card for the whole profile. On a phone it drops its frame
+            and the fields sit straight on the page. */}
+        <Card className="max-sm:gap-4 max-sm:rounded-none max-sm:bg-transparent max-sm:py-0 max-sm:shadow-none max-sm:ring-0">
+          <CardHeader className="border-b max-sm:hidden">
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <IconBuilding className="size-4" />
+              </span>
+              <div>
+                <CardTitle>Company Details</CardTitle>
+                <CardDescription>
+                  Your company&apos;s logo, name, code, contact details and
+                  address.
+                </CardDescription>
+              </div>
+            </div>
             {companyProfile && (
               <CardAction>
                 <Badge
@@ -236,111 +265,84 @@ export default function CompanyProfileForm({
               </CardAction>
             )}
           </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            <Field>
-              <FieldLabel>Logo</FieldLabel>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onFilePicked}
-              />
-              <div>
-                {shownLogo ? (
-                  <div className="relative h-24 w-24">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={shownLogo}
-                      alt="Company logo"
-                      className="h-24 w-24 rounded-md border bg-muted object-contain p-1"
-                    />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          aria-label="Edit logo"
-                          className="absolute -right-2 -top-2 size-7 rounded-full shadow"
-                        >
-                          <IconPencil className="size-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={onRemoveLogo}>
-                          <IconTrash />
-                          Remove logo
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={openFilePicker}>
-                          <IconPhoto />
-                          Upload image
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={openFilePicker}
-                    aria-label="Upload logo"
-                    className="flex h-24 w-24 items-center justify-center rounded-md border-2 border-dashed text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
-                  >
-                    <IconPlus className="size-6" />
-                  </button>
-                )}
-                {logoFile && (
-                  <p className="text-xs text-muted-foreground">
-                    New logo selected: {logoFile.name}
-                  </p>
-                )}
-                {removeLogo && companyProfile?.logo && (
-                  <p className="text-xs text-muted-foreground">
-                    Logo will be removed when you save.
-                  </p>
-                )}
-              </div>
-            </Field>
-
-            {/* Read-only identity: plain text, not disabled inputs — these
-                values are informational and cannot be edited here. */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Typography variant="muted" as="span">
-                  Company Name
-                </Typography>
-                <Typography variant="small" as="span" className="text-base">
-                  {companyProfile?.name || "—"}
-                </Typography>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Typography variant="muted" as="span">
-                  Company Code
-                </Typography>
-                <Typography
-                  variant="small"
-                  as="span"
-                  className="font-mono text-base"
+          <CardContent className="flex flex-col gap-6 max-sm:px-0">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onFilePicked}
+            />
+            {/* The logo: a dashed square until one is picked, then its
+                preview, with the actions beside it. */}
+            <div className="flex items-center gap-4">
+              {shownLogo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={shownLogo}
+                  alt="Company logo"
+                  className="size-16 shrink-0 rounded-lg border bg-muted object-contain p-1"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={openFilePicker}
+                  aria-label="Upload logo"
+                  className="flex size-16 shrink-0 items-center justify-center rounded-lg border-2 border-dashed text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
                 >
-                  {companyProfile?.code || "—"}
-                </Typography>
+                  <IconPhotoPlus className="size-5" />
+                </button>
+              )}
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <div>
+                  <p className="text-sm font-medium">Logo</p>
+                  <p className="text-xs text-muted-foreground">
+                    {logoFile
+                      ? `New logo selected: ${logoFile.name}`
+                      : removeLogo && companyProfile?.logo
+                        ? "Logo will be removed when you save."
+                        : "PNG, JPG or SVG."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={openFilePicker}
+                  >
+                    <IconUpload />
+                    {shownLogo ? "Change Logo" : "Upload Logo"}
+                  </Button>
+                  {shownLogo && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={onRemoveLogo}
+                    >
+                      <IconTrash />
+                      Remove
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Contact &amp; Address
-              <InfoIcon text="How your company can be reached, and its registered address." />
-            </CardTitle>
-            <CardDescription>
-              Contact details and registered address.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
             <div className="grid gap-4 sm:grid-cols-2">
+              {/* Set by the platform operator, so shown locked. */}
+              <LockedField
+                id="company-name"
+                label="Company Name"
+                value={companyProfile?.name ?? ""}
+              />
+              <LockedField
+                id="company-code"
+                label="Company Code"
+                value={companyProfile?.code ?? ""}
+                className="font-mono"
+              />
               {EDITABLE_FIELDS.map((f) => (
                 <Field key={f.name}>
                   <FieldLabel htmlFor={f.name}>{f.label}</FieldLabel>
@@ -358,71 +360,44 @@ export default function CompanyProfileForm({
                   )}
                 </Field>
               ))}
-              <Field>
-                <FieldLabel htmlFor="country">Country</FieldLabel>
-                <Select
-                  value={formik.values.country?.toString() ?? ""}
-                  onValueChange={handleCountryChange}
-                  disabled={countriesLoading || !countries.length}
-                >
-                  <SelectTrigger id="country" className="w-full">
-                    <SelectValue placeholder="Select country" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {countries.map((country) => (
-                      <SelectItem key={country.id} value={String(country.id)}>
-                        {country.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="state">State</FieldLabel>
-                <Select
-                  value={formik.values.state?.toString() ?? ""}
-                  onValueChange={handleStateChange}
-                  disabled={!formik.values.country || statesLoading}
-                >
-                  <SelectTrigger id="state" className="w-full">
-                    <SelectValue
-                      placeholder={
-                        statesLoading ? "Loading states..." : "Select state"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {states.map((state) => (
-                      <SelectItem key={state.id} value={String(state.id)}>
-                        {state.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="city">City</FieldLabel>
-                <Select
-                  value={formik.values.city?.toString() ?? ""}
-                  onValueChange={handleCityChange}
-                  disabled={!formik.values.state || citiesLoading}
-                >
-                  <SelectTrigger id="city" className="w-full">
-                    <SelectValue
-                      placeholder={
-                        citiesLoading ? "Loading cities..." : "Select city"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cities.map((city) => (
-                      <SelectItem key={city.id} value={String(city.id)}>
-                        {city.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+              <LocationSelect
+                id="country"
+                label="Country"
+                value={formik.values.country}
+                options={countries}
+                onChange={handleCountryChange}
+                loading={countriesLoading}
+                disabled={!countries.length}
+                placeholder="Select country"
+                loadingPlaceholder="Loading countries..."
+                error={
+                  formik.touched.country ? formik.errors.country : undefined
+                }
+              />
+              <LocationSelect
+                id="state"
+                label="State"
+                value={formik.values.state}
+                options={states}
+                onChange={handleStateChange}
+                loading={statesLoading}
+                disabled={!formik.values.country}
+                placeholder="Select state"
+                loadingPlaceholder="Loading states..."
+                error={formik.touched.state ? formik.errors.state : undefined}
+              />
+              <LocationSelect
+                id="city"
+                label="City"
+                value={formik.values.city}
+                options={cities}
+                onChange={handleCityChange}
+                loading={citiesLoading}
+                disabled={!formik.values.state}
+                placeholder="Select city"
+                loadingPlaceholder="Loading cities..."
+                error={formik.touched.city ? formik.errors.city : undefined}
+              />
               <Field>
                 <FieldLabel htmlFor="street">Street</FieldLabel>
                 <Input
@@ -442,11 +417,26 @@ export default function CompanyProfileForm({
           </CardContent>
         </Card>
 
-        <div className="flex justify-start border-t border-border py-3">
+        {/* Save bar: whether anything is waiting, and the button. Pinned to
+            the bottom of the page. */}
+        <div className="sticky bottom-0 z-10 -mx-4 mt-auto -mb-4 flex items-center justify-between gap-3 border-t border-border bg-background px-4 py-3">
+          <p className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
+            {hasChanges ? (
+              <>
+                <span className="size-2 rounded-full bg-amber-500" />
+                Unsaved changes
+              </>
+            ) : (
+              <>
+                <IconCircleCheck className="size-4 text-emerald-600" />
+                All changes saved
+              </>
+            )}
+          </p>
           <Button
             type="submit"
-            size="lg"
-            disabled={companySaving || (!formik.dirty && !hasLogoChange)}
+            className="w-full sm:w-auto"
+            disabled={companySaving || !hasChanges}
           >
             {companySaving ? (
               <>
@@ -462,6 +452,12 @@ export default function CompanyProfileForm({
           </Button>
         </div>
       </form>
+
+      <UnsavedChangesDialog
+        isDirty={hasChanges}
+        isSaving={companySaving}
+        onSave={async () => (await formik.submitForm()) === true}
+      />
     </div>
   );
 }

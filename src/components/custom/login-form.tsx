@@ -16,7 +16,6 @@ import {
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   InputGroup,
@@ -37,10 +36,7 @@ export function LoginForm({
 
   const validationSchema = z.object({
     email: z.email("Invalid email").min(1, "Email is required"),
-    password: z
-      .string()
-      .min(1, "Password is required")
-      .min(6, "Password must be at least 6 characters"),
+    password: z.string().min(1, "Password is required"),
   });
 
   const formik = useFormik({
@@ -75,12 +71,19 @@ export function LoginForm({
         } catch {
           payload = null;
         }
-        // Errors Django ties to `email` / `password` go under those fields.
-        applyServerFieldErrors(formik, payload);
-        toast.error("Log in Failed!", {
+        // Field errors go under their fields, like the other forms. A wrong
+        // email or password comes back as one non-field message (the backend
+        // never says which, so an email's account isn't revealed): it goes
+        // under both fields.
+        const nonField = payload?.data?.non_field_errors;
+        if (!applyServerFieldErrors(formik, payload) && nonField) {
+          formik.setErrors({ email: nonField, password: nonField });
+          formik.setTouched({ email: true, password: true }, false);
+        }
+        toast.error("Log in failed", {
           description:
-            payload?.data?.non_field_errors ??
-            payload?.message ??
+            nonField ||
+            payload?.message ||
             "We couldn't log you in right now. Please try again.",
         });
       }
@@ -95,9 +98,11 @@ export function LoginForm({
       {...props}
       onSubmit={formik.handleSubmit}
     >
-      <FieldGroup>
+      <FieldGroup className="gap-5">
         <div className="flex flex-col gap-2">
-          <Typography variant="h1">Welcome back 👋</Typography>
+          <Typography variant="h1" className="text-2xl font-bold sm:text-3xl">
+            Welcome Back 👋
+          </Typography>
           <Typography variant="p" className="text-muted-foreground">
             Log in to your StoreSignal account to continue
           </Typography>
@@ -135,7 +140,7 @@ export function LoginForm({
               href="/forgot-password"
               className="text-sm font-medium text-primary hover:underline"
             >
-              Forgot password?
+              Forgot Password?
             </Link>
           </div>
           <InputGroup>
@@ -170,12 +175,6 @@ export function LoginForm({
             </Typography>
           )}
         </Field>
-        <Field orientation="horizontal">
-          <Checkbox id="remember-me" name="rememberMe" />
-          <FieldLabel htmlFor="remember-me" className="font-normal">
-            Remember me
-          </FieldLabel>
-        </Field>
         <Field>
           <Button
             disabled={isLoading}
@@ -184,7 +183,7 @@ export function LoginForm({
             className="relative"
           >
             {isLoading && <Spinner data-icon="inline-start" />}
-            {isLoading ? "Logging in..." : "Log in"}
+            {isLoading ? "Logging In..." : "Log In"}
             {!isLoading && <IconArrowRight className="absolute right-4" />}
           </Button>
         </Field>

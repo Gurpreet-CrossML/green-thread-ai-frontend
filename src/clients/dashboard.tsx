@@ -52,6 +52,7 @@ type SummaryMetric = {
   statusVariant: "success" | "warning" | "neutral" | "info" | "danger";
   href?: string;
   statusHref?: string;
+  breakdown?: { label: string; href: string }[];
   trend?: MetricTrend;
 };
 
@@ -249,7 +250,7 @@ export default function Dashboard() {
       value: `${FetchConversionRateData?.percentage || 0}%`,
       infoText:
         "Percentage of chatbot sessions where the user clicked a checkout link, out of all sessions in the selected period.",
-      status: `${FetchConversionRateData?.converted_count || 0} of ${FetchConversionRateData?.total_count || 0} sessions`,
+      status: `${FetchConversionRateData?.converted_count || 0} Of ${FetchConversionRateData?.total_count || 0} Sessions`,
       statusVariant: "info" as const,
       trend: FetchConversionRateData?.trend,
     },
@@ -258,22 +259,40 @@ export default function Dashboard() {
       value: FetchEngagementData?.total_threads?.toLocaleString() || "0",
       infoText:
         "Shows how many chatbot sessions happened in the selected time range, so you can quickly understand overall traffic volume.",
-      status: "All Sessions",
+      status: "",
       statusVariant: "neutral" as const,
       trend: FetchEngagementData?.total_threads_trend,
-      href: threadsHref({}),
+      href: threadsHref({ is_active: "false" }),
+      // The total counts open and closed chats, so link each part to its page.
+      breakdown:
+        (FetchEngagementData?.total_threads || 0) > 0
+          ? [
+              {
+                label: `${FetchEngagementData?.active_threads || 0} ${
+                  FetchEngagementData?.active_threads === 1
+                    ? "Active Session"
+                    : "Active Sessions"
+                }`,
+                href: "/support",
+              },
+              {
+                label: `${FetchEngagementData?.closed_threads || 0} ${
+                  FetchEngagementData?.closed_threads === 1
+                    ? "Closed Session"
+                    : "Closed Sessions"
+                }`,
+                href: threadsHref({ is_active: "false" }),
+              },
+            ]
+          : undefined,
     },
     {
       label: "Active Sessions",
-      value: FetchThreadCountsData.active.toLocaleString(),
-      infoText:
-        "Shows the number of chats open right now, and how many of them are waiting for a human agent.",
-      status: `${FetchThreadCountsData.needsHuman} need a human`,
-      statusVariant: "danger" as const,
-      // The count is every active chat; only the "needs a human" sub-line
-      // goes to the filtered queue.
-      href: "/support?filter=all",
-      statusHref: "/support?filter=needs_human",
+      value: FetchThreadCountsData?.active.toLocaleString() || "0",
+      infoText: "Shows the number of chats open right now.",
+      status: "",
+      statusVariant: "neutral" as const,
+      href: "/support",
     },
     {
       label: "Avg Response Time",
@@ -298,11 +317,19 @@ export default function Dashboard() {
       value: `${FetchOperationalEfficiencyData?.bot_resolution_rate?.percentage || 0}%`,
       infoText:
         "Shows the share of closed conversations the chatbot resolved on its own, without a human agent taking over.",
-      status: `${FetchOperationalEfficiencyData?.bot_resolution_rate?.count || 0} of ${FetchOperationalEfficiencyData?.bot_resolution_rate?.total || 0} chats`,
+      status: `${FetchOperationalEfficiencyData?.bot_resolution_rate?.count || 0} Of ${FetchOperationalEfficiencyData?.bot_resolution_rate?.total || 0} Chats`,
       statusVariant: "info" as const,
       trend: FetchOperationalEfficiencyData?.bot_resolution_rate?.trend,
-      href: threadsHref({ handled_by: "ai", has_agent: "false" }),
-      statusHref: threadsHref({ handled_by: "ai", has_agent: "false" }),
+      href: threadsHref({
+        is_active: "false",
+        handled_by: "ai",
+        has_agent: "false",
+      }),
+      statusHref: threadsHref({
+        is_active: "false",
+        handled_by: "ai",
+        has_agent: "false",
+      }),
     },
   ];
 
@@ -501,11 +528,23 @@ export default function Dashboard() {
                   )}
                 </CardContent>
                 <CardFooter className="justify-between gap-1.5">
-                  {metric.statusHref ? (
-                    <Link href={metric.statusHref}>{statusBadge}</Link>
-                  ) : (
-                    statusBadge
-                  )}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {metric.status &&
+                      (metric.statusHref ? (
+                        <Link href={metric.statusHref}>{statusBadge}</Link>
+                      ) : (
+                        statusBadge
+                      ))}
+                    {metric.breakdown?.map((chip) => (
+                      <Link
+                        key={chip.label}
+                        href={chip.href}
+                        className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
+                      >
+                        {chip.label}
+                      </Link>
+                    ))}
+                  </div>
                   {metric.trend && (
                     <Badge
                       variant="outline"

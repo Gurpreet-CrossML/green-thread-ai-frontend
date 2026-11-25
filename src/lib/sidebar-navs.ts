@@ -329,6 +329,19 @@ export function isNavItemVisible(
   return true;
 }
 
+/**
+ * May this user open the area whose sub-sidebar is `key`? Uses the area's
+ * main-nav entry, so the side menu never shows beside an area's lock screen.
+ * An area with no main-nav entry is left to its own page gate.
+ */
+export function isAreaVisible(
+  key: string,
+  user: SessionIdentity | null | undefined,
+): boolean {
+  const item = sidebarMenus.nav.find((entry) => entry.subSidebarKey === key);
+  return !item || isNavItemVisible(item, user);
+}
+
 /** Where to send a user whose role cannot open the page they landed on. */
 export function firstVisibleNavUrl(
   user: SessionIdentity | null | undefined,

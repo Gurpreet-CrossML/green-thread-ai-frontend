@@ -98,7 +98,7 @@ export default function SettingsStore() {
         onPaginationChange={handlePaginationChange}
         isLoading={FetchStoresListIsLoading}
         noun="store"
-        emptyTitle={hasQuery ? "No matching stores" : "No stores yet"}
+        emptyTitle={hasQuery ? "No Matching Stores" : "No Stores Yet"}
         emptyDescription={
           hasQuery
             ? "Try a different search."

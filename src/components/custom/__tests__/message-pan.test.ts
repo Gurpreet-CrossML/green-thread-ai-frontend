@@ -50,4 +50,10 @@ describe("describeMessage", () => {
     expect(m.senderLabel).toBe("Ann Lee");
     expect(m.avatarLabel).toBe("AL");
   });
+
+  it("calls a customer with no name a Guest", () => {
+    const m = describeMessage({ ...base, role: "user" }, "me@x.io", null);
+    expect(m.senderLabel).toBe("Guest");
+    expect(m.avatarLabel).toBe("G");
+  });
 });

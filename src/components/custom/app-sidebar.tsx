@@ -187,7 +187,9 @@ export function AppSidebar({
           </SidebarMenu>
           <StoreSwitcher />
         </SidebarHeader>
-        <SidebarContent>
+        {/* Scrolls on a short screen (a phone turned sideways), where the
+            icon state's clipping would hide the lower links. */}
+        <SidebarContent className="group-data-[collapsible=icon]:overflow-y-auto">
           <NavMain
             items={navMain}
             liveSupportBadgeCount={FetchThreadCountsData.needsHuman}
@@ -224,7 +226,10 @@ export function AppSidebar({
               <CardTitle>{subSidebarItems.title}</CardTitle>
             </div>
           </SidebarHeader>
-          <SidebarContent>
+          {/* This sidebar sits inside one pinned to its icon state, whose
+              rules clip the content. Scrolling is switched back on so a long
+              list stays reachable. */}
+          <SidebarContent className="group-data-[collapsible=icon]:overflow-y-auto">
             <SidebarGroup>
               <SidebarGroupContent className="flex flex-col gap-2">
                 <SubSidebarList
