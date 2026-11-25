@@ -123,6 +123,12 @@ export const API_DATE_FORMAT = "yyyy-MM-dd";
 /** date-fns format a picked day is shown in. */
 export const DISPLAY_DATE_FORMAT = "MMM dd, yyyy";
 
+// The longest reply or note an agent can send from Live Chat: typing stops
+// at it, the box turns red and Send turns off.
+export const MAX_MESSAGE_LENGTH = 1000;
+export const MESSAGE_TOO_LONG_TEXT =
+  "Your message is too long. Please shorten it and try again.";
+
 // Chatbot feedback rating choices, mirroring the backend RATING_CHOICES.
 export const FEEDBACK_RATINGS = [
   { value: "very_bad", label: "😞 Very Bad" },

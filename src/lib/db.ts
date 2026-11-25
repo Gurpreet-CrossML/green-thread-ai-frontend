@@ -20,25 +20,27 @@ databaseUrl.searchParams.delete("channel_binding");
 //    check, which can't pass through the proxy.
 function sslConfig(): PoolConfig["ssl"] {
   if (databaseUrl.hostname.endsWith(".neon.tech")) {
-    return { rejectUnauthorized: false };
+    return { rejectUnauthorized: true };
   }
   return {
     ca: fs
       .readFileSync(path.join(process.cwd(), "global-bundle.pem"))
       .toString(),
-    rejectUnauthorized: false,
+    rejectUnauthorized: true,
     checkServerIdentity: () => undefined,
   };
 }
 
-// A single shared pool. Nothing should import `pool` directly; go through
-// getDb() (src/lib/request-context.ts) so each request's queries share one
-// transaction and the caller's access.
+// A single shared pool. Exported so the tenant layer (src/lib/tenant-context.ts)
+// can run each request's queries in one transaction with a per-request
+// `SET LOCAL search_path` — see that file. Nothing else should import `pool`
+// directly; go through getDb() so a query can never escape its tenant scope.
 export const pool = new Pool({
   connectionString: databaseUrl.toString(),
   ssl: sslConfig(),
 });
 
-// Base Drizzle handle over the pool. Used to open per-request transactions
-// (request-context). Business queries must NOT use this directly — use getDb().
+// Base Drizzle handle over the pool. Used to open per-request tenant
+// transactions (tenant-context). Business queries must NOT use this directly —
+// it has no tenant search_path set, so it resolves only `public`. Use getDb().
 export const db = drizzle(pool);

@@ -54,7 +54,9 @@ export function ForgotPasswordForm() {
           <IconMailCheck className="size-6" />
         </div>
         <div className="flex flex-col gap-2">
-          <Typography variant="h1">Check your email</Typography>
+          <Typography variant="h1" className="text-2xl font-bold sm:text-3xl">
+            Check Your Email
+          </Typography>
           <Typography variant="p" className="text-muted-foreground">
             If an account exists for <strong>{sentTo}</strong>, we have sent a
             link to reset its password.
@@ -68,7 +70,7 @@ export function ForgotPasswordForm() {
         <Button variant="outline" size="lg" asChild>
           <Link href="/login">
             <IconArrowLeft />
-            Back to log in
+            Back To Log In
           </Link>
         </Button>
       </div>
@@ -77,9 +79,11 @@ export function ForgotPasswordForm() {
 
   return (
     <form className="flex flex-col gap-6" onSubmit={formik.handleSubmit}>
-      <FieldGroup>
+      <FieldGroup className="gap-5">
         <div className="flex flex-col gap-2">
-          <Typography variant="h1">Forgot your password?</Typography>
+          <Typography variant="h1" className="text-2xl font-bold sm:text-3xl">
+            Forgot Your Password?
+          </Typography>
           <Typography variant="p" className="text-muted-foreground">
             Enter the email you log in with and we&apos;ll send you a link to
             set a new password.
@@ -99,7 +103,16 @@ export function ForgotPasswordForm() {
               placeholder="you@example.com"
               required
               aria-invalid={formik.touched.email && !!formik.errors.email}
-              onChange={formik.handleChange}
+              // An email never has spaces; a pasted one often brings some.
+              onChange={(event) =>
+                formik.setFieldValue(
+                  "email",
+                  event.target.value.replace(/\s/g, ""),
+                )
+              }
+              onKeyDown={(event) => {
+                if (event.key === " ") event.preventDefault();
+              }}
               onBlur={formik.handleBlur}
               value={formik.values.email}
             />
@@ -113,7 +126,7 @@ export function ForgotPasswordForm() {
         <Field>
           <Button type="submit" size="lg" disabled={formik.isSubmitting}>
             {formik.isSubmitting && <Spinner data-icon="inline-start" />}
-            {formik.isSubmitting ? "Sending..." : "Send reset link"}
+            {formik.isSubmitting ? "Sending..." : "Send Reset Link"}
           </Button>
         </Field>
         <Typography variant="muted" className="text-center text-sm">
@@ -122,7 +135,7 @@ export function ForgotPasswordForm() {
             href="/login"
             className="font-medium text-primary hover:underline"
           >
-            Back to log in
+            Back To Log In
           </Link>
         </Typography>
       </FieldGroup>

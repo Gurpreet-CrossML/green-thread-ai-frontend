@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { CartDetailsCard } from "@/components/custom/thread-detail-panels";
+import { Typography } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
 import type { CartDataResponse } from "@/redux/api-slice/thread-slice";
 
@@ -70,11 +71,16 @@ export function CustomerDetailsPanel({
   /** Adds a drag handle on the pane's left edge. */
   onResizeStart?: (event: PointerEvent) => void;
 }) {
-  const details = (
+  const hasCart =
+    !!cart &&
+    (cart.loading || (cart.data?.updated_cart_data?.items?.length ?? 0) > 0);
+  const details = hasCart ? (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {cart ? (
-        <CartDetailsCard cartData={cart.data} loading={cart.loading} />
-      ) : null}
+      <CartDetailsCard cartData={cart.data} loading={cart.loading} />
+    </div>
+  ) : (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
+      <Typography variant="muted">No Customer Data Available</Typography>
     </div>
   );
 

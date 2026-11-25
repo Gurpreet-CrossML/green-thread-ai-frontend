@@ -117,11 +117,13 @@ export default function ConversationMap({
     }
     return [];
   });
-  // Overlapping markers hide each other at minute-level resolution, so retain
-  // the first meaningful event in each minute.
+  // One marker per event type per minute; different events in the same minute
+  // are spread across that minute's column below rather than dropped.
   const dedupedMarkers = markers.filter(
     (marker, index) =>
-      markers.findIndex((item) => item.minute === marker.minute) === index,
+      markers.findIndex(
+        (item) => item.minute === marker.minute && item.label === marker.label,
+      ) === index,
   );
   // AI issues carry no timestamp, so the diamond sits on the AI reply it was
   // least sure about (the last reply when none has a score), on a free minute.
@@ -156,7 +158,15 @@ export default function ConversationMap({
       shape: "diamond",
     });
   }
-  const visibleMarkers = [...dedupedMarkers, ...issueMarkers];
+  const allMarkers = [...dedupedMarkers, ...issueMarkers];
+  // Each marker gets its own slot inside its minute's column.
+  const visibleMarkers = allMarkers.map((marker) => {
+    const sameMinute = allMarkers.filter(
+      (item) => item.minute === marker.minute,
+    );
+    const slot = (sameMinute.indexOf(marker) + 1) / (sameMinute.length + 1);
+    return { ...marker, position: ((marker.minute + slot) / minutes) * 100 };
+  });
   const removedCount = markers.filter(
     (marker) => marker.label === "Removed from cart",
   ).length;
@@ -180,7 +190,7 @@ export default function ConversationMap({
   return (
     <section className="hidden overflow-hidden rounded-xl border bg-background lg:block">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
-        <h2 className="text-sm font-semibold">Conversation map</h2>
+        <h2 className="text-sm font-semibold">Conversation Map</h2>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>
             <i className="mr-2 inline-block size-2 rounded-full bg-primary" />
@@ -206,10 +216,14 @@ export default function ConversationMap({
       </div>
       <div className="mx-5 mt-4 grid grid-cols-4 overflow-hidden rounded-lg border">
         {[
-          ["Resolution score", rate ? `${rate}%` : "—", "text-primary"],
-          ["Cart", `${cartCount} items`, ""],
-          ["Removed by AI", `${removedCount} items`, ""],
-          ["AI issues", String(issueCount), "text-red-600"],
+          ["Resolution Score", rate ? `${rate}%` : "—", "text-primary"],
+          ["Cart", `${cartCount} ${cartCount === 1 ? "Item" : "Items"}`, ""],
+          [
+            "Removed By AI",
+            `${removedCount} ${removedCount === 1 ? "Item" : "Items"}`,
+            "",
+          ],
+          ["AI Issues", String(issueCount), "text-red-600"],
         ].map(([label, value, color]) => (
           <div key={label} className="border-r px-3 py-2.5 last:border-r-0">
             <p className="text-xs text-muted-foreground">{label}</p>
@@ -229,8 +243,7 @@ export default function ConversationMap({
             <span className="absolute bottom-0.5 left-1/2 size-4 -translate-x-1/2 rounded-[5px] border-2 border-background bg-muted-foreground ring-1 ring-muted-foreground" />
           </div>
         ) : null}
-        {visibleMarkers.map((marker, index) => {
-          const position = ((marker.minute + 0.5) / minutes) * 100;
+        {visibleMarkers.map(({ position, ...marker }, index) => {
           const labelTop = [0, 22, 44][index % 3];
           const labelClass =
             position > 84

@@ -25,6 +25,11 @@ import {
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Typography } from "@/components/ui/typography";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { applyServerFieldErrors, formikErrorsFromZod } from "@/lib/form-errors";
 import { openResetLink, resetPassword } from "@/lib/password-reset";
 
@@ -88,14 +93,21 @@ function PasswordInput({
           value={formik.values[name]}
         />
         <InputGroupAddon align="inline-end">
-          <InputGroupButton
-            type="button"
-            size="icon-xs"
-            aria-label={visible ? "Hide password" : "Show password"}
-            onClick={() => setVisible((v) => !v)}
-          >
-            {visible ? <IconEyeOff /> : <IconEye />}
-          </InputGroupButton>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <InputGroupButton
+                type="button"
+                size="icon-xs"
+                aria-label={visible ? "Hide password" : "Show password"}
+                onClick={() => setVisible((v) => !v)}
+              >
+                {visible ? <IconEyeOff /> : <IconEye />}
+              </InputGroupButton>
+            </TooltipTrigger>
+            <TooltipContent>
+              {visible ? "Hide Password" : "Show Password"}
+            </TooltipContent>
+          </Tooltip>
         </InputGroupAddon>
       </InputGroup>
       {error && (
@@ -181,14 +193,16 @@ export function ResetPasswordForm({
           <IconLinkOff className="size-6" />
         </div>
         <div className="flex flex-col gap-2">
-          <Typography variant="h1">This link no longer works</Typography>
+          <Typography variant="h1" className="text-2xl font-bold sm:text-3xl">
+            This link no longer works
+          </Typography>
           <Typography variant="p" className="text-muted-foreground">
             Reset links can be opened only once and expire after a while. This
             one is invalid, expired, or has already been used.
           </Typography>
         </div>
         <Button size="lg" asChild>
-          <Link href="/forgot-password">Request a new link</Link>
+          <Link href="/forgot-password">Request A New Link</Link>
         </Button>
       </div>
     );
@@ -201,7 +215,9 @@ export function ResetPasswordForm({
           <IconCircleCheck className="size-6" />
         </div>
         <div className="flex flex-col gap-2">
-          <Typography variant="h1">Password changed</Typography>
+          <Typography variant="h1" className="text-2xl font-bold sm:text-3xl">
+            Password Changed
+          </Typography>
           <Typography variant="p" className="text-muted-foreground">
             You have been signed out on every device. Log in with your new
             password.
@@ -209,7 +225,7 @@ export function ResetPasswordForm({
         </div>
         <Button size="lg" asChild>
           <Link href="/login">
-            Log in
+            Log In
             <IconArrowRight />
           </Link>
         </Button>
@@ -219,9 +235,11 @@ export function ResetPasswordForm({
 
   return (
     <form className="flex flex-col gap-6" onSubmit={formik.handleSubmit}>
-      <FieldGroup>
+      <FieldGroup className="gap-5">
         <div className="flex flex-col gap-2">
-          <Typography variant="h1">Set a new password</Typography>
+          <Typography variant="h1" className="text-2xl font-bold sm:text-3xl">
+            Set A New Password
+          </Typography>
           <Typography variant="p" className="text-muted-foreground">
             Finish now: this link has been used and won&apos;t open again. After
             the change you&apos;ll be signed out everywhere.
@@ -244,7 +262,7 @@ export function ResetPasswordForm({
         <Field>
           <Button type="submit" size="lg" disabled={formik.isSubmitting}>
             {formik.isSubmitting && <Spinner data-icon="inline-start" />}
-            {formik.isSubmitting ? "Saving..." : "Reset password"}
+            {formik.isSubmitting ? "Saving..." : "Reset Password"}
           </Button>
         </Field>
       </FieldGroup>

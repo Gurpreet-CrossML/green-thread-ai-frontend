@@ -78,7 +78,7 @@ export function SessionFacts({
     },
     {
       icon: IconNetwork,
-      label: "IP address",
+      label: "IP Address",
       value: userMetadata.ip_address ?? "",
     },
     { icon: IconDeviceLaptop, label: "Device", value: device },

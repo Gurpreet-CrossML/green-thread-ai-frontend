@@ -42,9 +42,8 @@ export const GetStores = createAsyncThunk<Store[], GetStoresArgs>(
       const response = isAxiosError(error) ? error.response : undefined;
       const data = response?.data;
 
-      toast.error("Uh oh! Something went wrong.", {
-        description:
-          data?.message || "Unable to fetch the Store, please try again later.",
+      toast.error("Couldn't load the stores.", {
+        description: data?.message || "Please try again later.",
       });
 
       return thunkAPI.rejectWithValue(data || "Something went wrong");
@@ -79,17 +78,20 @@ export const FetchStoresList = createAsyncThunk(
     thunkAPI,
   ) => {
     try {
+      // Axios encodes the params, so a search with spaces or "&" still works.
       const response = await axiosInstance.get(
-        `${ENDPOINTS.fetchStoresDirectory()}?search=${searchvalue}&page=${page}&limit=${limit}`,
-        { useBackend: true },
+        ENDPOINTS.fetchStoresDirectory(),
+        {
+          params: { search: searchvalue, page, limit },
+          useBackend: true,
+        },
       );
       return toPaginatedList<StoreListItem>(response.data.data);
     } catch (error) {
       const response = isAxiosError(error) ? error.response : undefined;
       const data = response?.data;
-      toast.error("Uh oh! Something went wrong.", {
-        description:
-          data?.message || "Unable to load the stores, please try again later.",
+      toast.error("Couldn't load the stores.", {
+        description: data?.message || "Please try again later.",
       });
       return thunkAPI.rejectWithValue(data || "Something went wrong");
     }
@@ -108,9 +110,8 @@ export const FetchWidgetScript = createAsyncThunk(
     } catch (error) {
       const response = isAxiosError(error) ? error.response : undefined;
       const data = response?.data;
-      toast.error("Uh oh! Something went wrong.", {
-        description:
-          data?.message || "Unable to load the widget script. Try again.",
+      toast.error("Couldn't load the widget script.", {
+        description: data?.message || "Please try again later.",
       });
       return thunkAPI.rejectWithValue(data || "Something went wrong");
     }
