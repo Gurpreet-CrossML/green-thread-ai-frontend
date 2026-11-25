@@ -45,24 +45,29 @@ export function StoreWidgetScriptDialog({
 
   return (
     <Dialog open={Boolean(store)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      {/* Capped to the screen, with the header fixed and only the body
+          scrolling — the snippet is taller than a laptop viewport, which
+          pushed the close button and the end of the code off screen. */}
+      <DialogContent className="max-h-[calc(100svh-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Widget Script</DialogTitle>
           <DialogDescription>
             Add this to the storefront so the chat widget loads.
           </DialogDescription>
         </DialogHeader>
-        {FetchWidgetScriptIsLoading || !store ? (
-          <LoadingState label="Loading widget script…" />
-        ) : FetchWidgetScriptData ? (
-          <StoreSnippet
-            store={{
-              code: store.code,
-              name: store.name,
-              widget_key: FetchWidgetScriptData.widget_key,
-            }}
-          />
-        ) : null}
+        <div className="min-h-0 overflow-y-auto">
+          {FetchWidgetScriptIsLoading || !store ? (
+            <LoadingState label="Loading widget script…" />
+          ) : FetchWidgetScriptData ? (
+            <StoreSnippet
+              store={{
+                code: store.code,
+                name: store.name,
+                widget_key: FetchWidgetScriptData.widget_key,
+              }}
+            />
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -108,11 +113,11 @@ function StoreSnippet({
         </div>
         <Button variant="outline" size="sm" onClick={copy}>
           <IconCopy data-icon="inline-start" />
-          {copied ? "Copied" : "Copy snippet"}
+          {copied ? "Copied" : "Copy Snippet"}
         </Button>
       </div>
       <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 p-3">
-        <Typography variant="small">How to install</Typography>
+        <Typography variant="small">How To Install</Typography>
         <ol className="flex flex-col gap-1.5">
           {INSTALL_STEPS.map((step, index) => (
             <li key={step} className="flex items-start gap-2">

@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  IconDotsVertical,
-  IconLogout,
-  IconUserCircle,
-} from "@tabler/icons-react";
+import { IconDotsVertical, IconLogout } from "@tabler/icons-react";
 
 import {
   AlertDialog,
@@ -20,7 +16,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -98,13 +93,7 @@ export function NavUser() {
                   </div>
                 </div>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuItem>
-                  <IconUserCircle />
-                  Account
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
+              {/* No "Account" item: there is no account page yet. */}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setShowLogoutAlert(true)}>
                 <IconLogout />
@@ -119,7 +108,7 @@ export function NavUser() {
       <AlertDialog open={showLogoutAlert} onOpenChange={setShowLogoutAlert}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>Are You Absolutely Sure?</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to sign out? You will need to log in again
               to access the dashboard.

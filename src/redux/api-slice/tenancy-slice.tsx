@@ -18,9 +18,10 @@ export type CompanyProfile = {
   email: string | null;
   phone: string | null;
   street: string | null;
-  city: { id: number; name: string } | null;
-  state: { id: number; name: string } | null;
-  country: { id: number; name: string } | null;
+  // The API returns location primary keys, not nested objects.
+  city: number | null;
+  state: number | null;
+  country: number | null;
   is_active: boolean;
 };
 
@@ -65,8 +66,8 @@ export const FetchCompanyProfile = createAsyncThunk(
       });
       return res.data.data as CompanyProfile;
     } catch (error) {
-      toast.error("Uh oh! Something went wrong.", {
-        description: errorMessage(error, "Unable to load company profile."),
+      toast.error("Couldn't load the company profile.", {
+        description: errorMessage(error, "Please try again later."),
       });
       return thunkAPI.rejectWithValue(errorMessage(error, "Failed"));
     }
@@ -89,8 +90,10 @@ export const UpdateCompanyProfile = createAsyncThunk(
         logo === null
       ) {
         const fd = new FormData();
+        // null clears a location (DRF reads "" as null); skipping it would
+        // leave the old state/city saved.
         Object.entries(fields).forEach(([k, v]) => {
-          if (v !== undefined && v !== null) fd.append(k, String(v));
+          if (v !== undefined) fd.append(k, v === null ? "" : String(v));
         });
         fd.append("logo", logo ?? "");
         body = fd;
@@ -106,8 +109,8 @@ export const UpdateCompanyProfile = createAsyncThunk(
       toast.success("Company profile updated.");
       return res.data.data as CompanyProfile;
     } catch (error) {
-      toast.error("Uh oh! Something went wrong.", {
-        description: errorMessage(error, "Unable to update company profile."),
+      toast.error("Couldn't save the company profile.", {
+        description: errorMessage(error, "Please try again later."),
       });
       const data = isAxiosError(error) ? error.response?.data : undefined;
       return thunkAPI.rejectWithValue(data || errorMessage(error, "Failed"));
@@ -166,8 +169,8 @@ export const FetchStaff = createAsyncThunk(
       });
       return res.data.data as StaffMember[];
     } catch (error) {
-      toast.error("Uh oh! Something went wrong.", {
-        description: errorMessage(error, "Unable to load staff."),
+      toast.error("Couldn't load the staff.", {
+        description: errorMessage(error, "Please try again later."),
       });
       return thunkAPI.rejectWithValue(errorMessage(error, "Failed"));
     }

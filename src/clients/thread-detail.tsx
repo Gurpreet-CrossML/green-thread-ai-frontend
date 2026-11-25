@@ -210,7 +210,7 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
           </EmptyDescription>
         </EmptyHeader>
         <Button variant="outline" asChild>
-          <Link href="/threads">Back to Threads</Link>
+          <Link href="/threads">Back To Threads</Link>
         </Button>
       </Empty>
     );
@@ -229,6 +229,8 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
   const improvements = FetchAIInsightData?.underperforming_cases ?? [];
   const successes = FetchAIInsightData?.overperforming_cases ?? [];
   const actions = FetchAIInsightData?.next_actionable_items ?? [];
+  // The endpoint answers `{}` until the thread has been analysed.
+  const hasInsights = Object.keys(FetchAIInsightData ?? {}).length > 0;
   const started = formatDayFirst(details?.created_at);
   // Time only: GT does not record why or by whom a chat closed yet.
   const endedAtDate = details?.ended_at ? new Date(details.ended_at) : null;
@@ -253,7 +255,7 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
     ? "—"
     : handlerNames.length
       ? `AI + ${handlerNames.join(", ")}`
-      : "AI only";
+      : "AI Only";
 
   const transcript = (
     <ConversationTranscript
@@ -271,13 +273,15 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
     <div className="space-y-4">
       <ThreadCard>
         <div className="flex items-center gap-4 border-b px-5 py-5">
-          <ResolutionRing value={resolutionRate} />
+          {hasInsights && <ResolutionRing value={resolutionRate} />}
           <div>
-            <h2 className="text-lg font-semibold">AI review</h2>
-            <p className="text-sm text-muted-foreground">
-              {FetchAIInsightData?.reason_for_score ||
-                "Conversation quality and resolution analysis."}
-            </p>
+            <h2 className="text-lg font-semibold">AI Review</h2>
+            {hasInsights && (
+              <p className="text-sm text-muted-foreground">
+                {FetchAIInsightData?.reason_for_score ||
+                  "Conversation quality and resolution analysis."}
+              </p>
+            )}
           </div>
         </div>
         <div>
@@ -290,7 +294,7 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
           {successes.length > 0 && (
             <div className="border-b px-5 py-5">
               <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-emerald-700">
-                Went well
+                Went Well
               </h3>
               <ul className="space-y-3.5">
                 {successes.map((item, index) => (
@@ -308,7 +312,7 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
           {improvements.length > 0 && (
             <div className="px-5 py-5">
               <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-red-700">
-                To improve
+                To Improve
               </h3>
               <div className="space-y-3.5">
                 {improvements.map((item, index) => (
@@ -331,9 +335,9 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
         <ThreadCard
           title={
             <div className="flex items-center justify-between">
-              <span>Suggested actions</span>
+              <span>Suggested Actions</span>
               <span className="text-sm font-normal text-muted-foreground">
-                {actions.length} actions
+                {actions.length} {actions.length === 1 ? "Action" : "Actions"}
               </span>
             </div>
           }
@@ -359,7 +363,7 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
           <div className="flex justify-between">
             <span>Cart</span>
             <span className="text-sm font-normal text-muted-foreground">
-              {cartItems.length} items
+              {cartItems.length} {cartItems.length === 1 ? "Item" : "Items"}
             </span>
           </div>
         }
@@ -403,24 +407,23 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
           )}
         </div>
       </ThreadCard>
-      <ThreadCard title="Thread details">
+      <ThreadCard title="Thread Details">
+        {/* Values line up on the left of their column. */}
         <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1.5 px-5 py-4 text-sm">
           <dt className="text-muted-foreground">Thread ID</dt>
-          <dd className="truncate text-right font-mono">{threadId}</dd>
+          <dd className="truncate font-mono">{threadId}</dd>
           <dt className="text-muted-foreground">Started</dt>
-          <dd className="text-right">{started}</dd>
+          <dd>{started}</dd>
           <dt className="text-muted-foreground">Ended</dt>
-          <dd className="text-right">{ended}</dd>
+          <dd>{ended}</dd>
           <dt className="text-muted-foreground">Duration</dt>
-          <dd className="text-right">{duration}</dd>
-          <dt className="text-muted-foreground">Handled by</dt>
-          <dd className="text-right">{handledBy}</dd>
-          <dt className="text-muted-foreground">Category</dt>
-          <dd className="text-right">{tags[0]?.name ?? "—"}</dd>
+          <dd>{duration}</dd>
+          <dt className="text-muted-foreground">Handled By</dt>
+          <dd>{handledBy}</dd>
           {feedback ? (
             <>
-              <dt className="text-muted-foreground">User feedback</dt>
-              <dd className="flex items-center justify-end gap-1.5 text-right">
+              <dt className="text-muted-foreground">User Feedback</dt>
+              <dd className="flex items-center gap-1.5">
                 <span aria-label={feedback.rating}>
                   {FEEDBACK_RATINGS.find(
                     (rating) => rating.value === feedback.rating,
@@ -551,7 +554,7 @@ export default function ThreadDetail({ threadId }: { threadId: string }) {
               value="review"
               className="text-base data-active:after:bg-primary"
             >
-              AI review{" "}
+              AI Review{" "}
               {improvements.length ? (
                 <span className="rounded-full bg-red-100 px-1.5 text-xs text-red-700">
                   {improvements.length}

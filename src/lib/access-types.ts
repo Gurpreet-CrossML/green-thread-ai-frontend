@@ -10,6 +10,14 @@ export type AccessibleStore = { code: string };
 /** Staff roles (Django `CompanyMembership.Role`); a company admin is `admin`. */
 export type StaffRole = "admin" | "supervisor" | "agent" | "viewer";
 
+/** Display names for the roles, as shown in the UI. */
+export const ROLE_LABELS: Record<StaffRole, string> = {
+  admin: "Admin",
+  supervisor: "Supervisor",
+  agent: "Agent",
+  viewer: "Viewer",
+};
+
 /** Permission keys (Django `tenancy.roles.ROLE_PERMISSIONS`). */
 export type Permission =
   | "conversations"

@@ -31,10 +31,18 @@ import {
   IconLock,
   IconShoppingBag,
   IconSparkles,
+  IconThumbDown,
+  IconThumbUp,
 } from "@tabler/icons-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import HoverZoomImage from "@/components/custom/hover-zoom-image";
+import { InfoIcon } from "@/components/custom/info-icon";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Spinner } from "../ui/spinner";
 
 /** "You" when `email` is the signed-in user, otherwise their name. */
@@ -141,7 +149,7 @@ function HandlerEventGroupRow({
   return (
     <div className="flex flex-col items-center gap-1 py-1">
       <span className="max-w-full wrap-anywhere rounded-full border border-dashed border-border bg-background px-3 py-1 text-center text-xs text-muted-foreground">
-        ↔ {events.length} handoffs, {formatTime(start)}–{formatTime(end)}{" "}
+        ↔ {events.length} Handoffs, {formatTime(start)}–{formatTime(end)}{" "}
         <button
           type="button"
           className="font-medium text-primary hover:underline"
@@ -271,14 +279,14 @@ export function describeMessage(
     message.messaged_by_email.toLowerCase() === me.toLowerCase(),
   );
   const senderLabel = isCustomer
-    ? customerName || "User"
+    ? customerName || "Guest"
     : isAi
       ? "AI Assistant"
       : isMe
         ? "You"
         : staffName || "Agent";
   const avatarLabel = isCustomer
-    ? getInitials(customerName || message.messaged_by) || "C"
+    ? getInitials(customerName || message.messaged_by) || "G"
     : isAi
       ? "AI"
       : getInitials(staffName) || "A";
@@ -392,7 +400,7 @@ function TyreCards({
                   />
                 ) : (
                   <div className="flex h-40 items-center justify-center bg-muted text-xs text-muted-foreground">
-                    No image
+                    No Image
                   </div>
                 )}
               </a>
@@ -511,7 +519,7 @@ function TyreStrip({ tyres }: { tyres: TyreRecommendation[] }) {
             aria-expanded={expanded}
             className="inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/5"
           >
-            {expanded ? "Show less" : `View all ${tyres.length}`}
+            {expanded ? "Show Less" : `View All ${tyres.length}`}
             {expanded ? (
               <IconChevronUp className="size-4" />
             ) : (
@@ -718,6 +726,72 @@ function MessageImages({
   );
 }
 
+/**
+ * The quick replies the AI offered under its answer. The customer taps one
+ * in the chat widget; here they are only shown, so they are plain chips,
+ * not buttons, with a note saying what they are.
+ */
+function SuggestedReplies({
+  suggestions,
+  alignEnd = false,
+}: {
+  suggestions?: string[] | null;
+  /** Line up on the right, under an AI message in Live Chat. */
+  alignEnd?: boolean;
+}) {
+  if (!suggestions?.length) return null;
+
+  return (
+    <div
+      className={cn(
+        "mt-2 flex flex-wrap items-center gap-2",
+        alignEnd ? "justify-end" : "justify-start",
+      )}
+    >
+      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+        Suggested Replies
+        <InfoIcon text="Quick replies the AI offered the customer. The customer can tap one in the chat widget to send it." />
+      </span>
+      {suggestions.map((suggestion, index) => (
+        <span
+          key={index}
+          className="inline-flex h-7 items-center rounded-full border border-border bg-background px-3 text-sm text-foreground"
+        >
+          {suggestion}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The customer's thumbs up/down on an AI reply. A thumbs-down with a
+ * written comment shows the comment on hover.
+ */
+function FeedbackChip({ message }: { message: ThreadMessage }) {
+  const rating = message.feedback_rating;
+  if (message.role !== "assistant" || !rating) return null;
+
+  const positive = rating === "good" || rating === "excellent";
+  const comment = message.feedback_message?.trim();
+
+  return (
+    <Tooltip open={positive || !comment ? false : undefined}>
+      <TooltipTrigger asChild>
+        <div className="mt-2 flex w-fit cursor-help items-center gap-1 text-xs font-medium text-primary">
+          {positive ? (
+            <IconThumbUp className="size-3.5" aria-hidden="true" />
+          ) : (
+            <IconThumbDown className="size-3.5" aria-hidden="true" />
+          )}
+          <span className="capitalize">{rating.replaceAll("_", " ")}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-80">{comment}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** Thread-detail transcript: one left-aligned column, read after the fact. */
 export function MessagePan({
   messages,
@@ -775,7 +849,7 @@ export function MessagePan({
                   onClick={() => setShowAllMessages(true)}
                   className="rounded-full border bg-background px-4 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
                 >
-                  Show {hiddenMessageCount} more messages
+                  Show {hiddenMessageCount} More Messages
                 </button>
                 <span className="h-px flex-1 bg-border" />
               </div>
@@ -933,28 +1007,11 @@ export function MessagePan({
                       />
                     ) : null}
 
-                    {message.role === "assistant" &&
-                      message.json_content?.suggestions &&
-                      message.json_content.suggestions.length > 0 && (
-                        <div className="mt-2 flex justify-start">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm text-muted-foreground">
-                              Suggested replies:
-                            </span>
-                            {message.json_content.suggestions.map(
-                              (s: string, idx: number) => (
-                                <Button
-                                  key={idx}
-                                  variant="outline"
-                                  className="h-7 rounded-full px-3 text-sm font-normal hover:border-primary hover:bg-primary/25 hover:text-primary"
-                                >
-                                  {s}
-                                </Button>
-                              ),
-                            )}
-                          </div>
-                        </div>
-                      )}
+                    {message.role === "assistant" && (
+                      <SuggestedReplies
+                        suggestions={message.json_content?.suggestions}
+                      />
+                    )}
 
                     {message.image_url ? (
                       <MessageImages
@@ -962,6 +1019,8 @@ export function MessagePan({
                         className="justify-end md:justify-start"
                       />
                     ) : null}
+
+                    <FeedbackChip message={message} />
                   </div>
                 </div>
               </div>
@@ -985,8 +1044,8 @@ export function MessagePan({
               </p>
               {closedCartItemCount !== undefined ? (
                 <span className="mt-1 inline-flex rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  {closedCartItemCount} item
-                  {closedCartItemCount === 1 ? "" : "s"} left in cart
+                  {closedCartItemCount} Item
+                  {closedCartItemCount === 1 ? "" : "s"} Left In Cart
                 </span>
               ) : null}
             </div>
@@ -1193,7 +1252,7 @@ export function LiveMessagePan({
                           ) : (
                             <>
                               <IconSparkles className="h-3 w-3" />
-                              Reply with AI
+                              Reply With AI
                             </>
                           )}
                         </Button>
@@ -1210,25 +1269,12 @@ export function LiveMessagePan({
                       <CartCard cart={cartDetails} />
                     ) : null}
 
-                    {message.role === "assistant" &&
-                      message.json_content?.suggestions &&
-                      message.json_content.suggestions.length > 0 && (
-                        <div className="mt-2 flex justify-end">
-                          <div className="flex flex-wrap gap-2">
-                            {message.json_content.suggestions.map(
-                              (s: string, idx: number) => (
-                                <Button
-                                  key={idx}
-                                  variant="outline"
-                                  className="rounded-full text-xs hover:border-primary hover:bg-primary/25 hover:text-primary"
-                                >
-                                  {s}
-                                </Button>
-                              ),
-                            )}
-                          </div>
-                        </div>
-                      )}
+                    {message.role === "assistant" && (
+                      <SuggestedReplies
+                        suggestions={message.json_content?.suggestions}
+                        alignEnd
+                      />
+                    )}
 
                     {message.image_url ? (
                       <MessageImages
@@ -1236,6 +1282,8 @@ export function LiveMessagePan({
                         className={isCustomer ? "justify-start" : "justify-end"}
                       />
                     ) : null}
+
+                    <FeedbackChip message={message} />
                   </div>
                 </div>
               </div>
